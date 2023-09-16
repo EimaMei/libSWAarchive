@@ -549,7 +549,7 @@ void siswa_arlFreeData(siArlFile* arlFile) {
 siArlFile siswa_arlCreate(siByte* contentBuffer, uint32_t* archiveLengths, size_t arrayLen) {
     siArlHeader header;
     size_t offset;
-    siArlFile arl = {0};
+    siArlFile arl;
 
     SI_ASSERT_NOT_NULL(contentBuffer);
     SI_ASSERT_NOT_NULL(archiveLengths);
