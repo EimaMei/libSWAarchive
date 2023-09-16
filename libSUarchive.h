@@ -130,37 +130,65 @@ SI_STATIC_ASSERT(sizeof(siArEntry) == 20);
 
 
 typedef struct {
+    /* Pointer to the contents of the data. If `siswa_xMake' or 'siswa_xCreateArContent'
+     * was used, the data is malloced and must be freed.
+    */
     siByte* data;
+    /* Current length of the content. Changes between entry modifications. */
     size_t len;
+    /* Total memory capacity of '.data'. */
     size_t cap;
 
+    /* Compress type of the content. */
     siCompressType compressed;
+    /* Current entry offset, modified by 'siswa_xEntryPoll'. Should not be modified otherwise.*/
     size_t curOffset;
 } siArFile;
 
+
+/* Creates a 'siArFile' structure from an '.ar' file. Must not be compressed. */
 siArFile siswa_arMake(const char* path);
+/* Creates a 'siArFile' structure from an '.ar' file and adds additional space to the capacity. Must not be compressed. */
 siArFile siswa_arMakeEx(const char* path, size_t additionalAllocSpace);
+/* Creates a 'siArFile' structure from an archive file's content in memory. Must not be compressed. */
 siArFile siswa_arMakeBuffer(siByte* data, size_t len);
+/* Creates a 'siArFile' structure from an archive file's content in memory, while also setting the capacity. Must not be compressed. */
 siArFile siswa_arMakeBufferEx(siByte* data, size_t len, size_t capacity);
+
+/* Creates a 'siArFile' structure and allocates an archive file in memory from the provided capacity. */
+siArFile siswa_arCreateArContent(size_t capacity);
+/* Creates a 'siArFile' structure and creates an archive file in memory from the provided buffer and capacity. */
+siArFile siswa_arCreateArContentEx(siByte* buffer, size_t capacity);
 
 siArHeader* siswa_arGetHeader(siArFile arFile); /* TODO */
 size_t siswa_arGetEntryCount(siArFile arFile); /* TODO */
 
+/* Polls for the next entry in the archive. It reaches the end once it hits NULL. */
 siArEntry* siswa_arEntryPoll(siArFile* arfile);
+/* Finds an entry matching the provided name. Returns NULL if the entry doesn't exist. */
 siArEntry* siswa_arEntryFind(siArFile arfile, const char* filename);
+/* Finds an entry matching the provided name with length. Returns NULL if the entry doesn't exist. */
 siArEntry* siswa_arEntryFindEx(siArFile arfile, const char* name, size_t nameLen);
 
+/* Gets the name of the provided entry. */
 char* siswa_arEntryGetName(siArEntry* entry);
+/* Gets the data of the provided entry. */
 siByte* siswa_arEntryGetData(siArEntry* entry);
 
+/* Adds a new entry in the archive. Fails if the entry name already exists or the capacity is too low. */
 siResult siswa_arEntryAdd(siArFile* arFile, const char* name, void* data, uint32_t dataSize);
+/* Adds a new entry in the archive. Fails if the entry name already exists or the capacity is too low. */
 siResult siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, void* data, uint32_t dataSize);
+/* Removes an entry in the archive. Fails if the entry doesn't exists. */
 siResult siswa_arEntryRemove(siArFile* arFile, const char* name);
+/* Removes an entry in the archive. Fails if the entry doesn't exists. */
 siResult siswa_arEntryRemoveEx(siArFile* arFile, const char* name, size_t nameLen);
 /* TODO */
 siResult siswa_arEntryUpdate(siArFile* arFile, const char* name, void* data, uint32_t dataSize);
 
 siByte* siswa_arMerge(siArFile mainAr, siArFile secondAr, siByte* outBuffer); /* TODO */
+/* Merges multiple archive files into the (copied) main archive file, then
+ * returns a buffer of the new archive file. Any duplicating entry names get ignored. */
 siByte* siswa_arMergeMul(siArFile mainAr, siArFile* arrayOfArs, size_t arrayLen,
         siByte* outBuffer);
 
@@ -338,7 +366,6 @@ siArFile siswa_arMakeEx(const char* path, size_t additionalAllocSpace) {
 siArFile siswa_arMakeBuffer(siByte* data, size_t len) {
     return siswa_arMakeBufferEx(data, len, len);
 }
-
 siArFile siswa_arMakeBufferEx(siByte* data, size_t len, size_t capacity) {
     siArFile ar;
     uint32_t identifier;
@@ -359,6 +386,31 @@ siArFile siswa_arMakeBufferEx(siByte* data, size_t len, size_t capacity) {
     ar.data = data;
     ar.len = len;
     ar.cap = capacity;
+    ar.curOffset = sizeof(siArHeader);
+
+    return ar;
+}
+
+siArFile siswa_arCreateArContent(size_t capacity) {
+    return siswa_arCreateArContentEx(malloc(capacity + sizeof(siArHeader)), capacity);
+}
+
+siArFile siswa_arCreateArContentEx(siByte* buffer, size_t capacity) {
+    siArHeader header;
+    siArFile ar;
+
+    SI_ASSERT(capacity >= sizeof(siArHeader), "Capacity must be at least equal to or be higher than 'sizeof(siArHeader)'.");
+
+    header.unknown = 0;
+    header.headerSizeof = sizeof(siArHeader);
+    header.entrySizeof = sizeof(siArEntry);
+    header.alignment = 64;
+    memcpy(buffer, &header, sizeof(siArHeader));
+
+    ar.data = buffer;
+    ar.len = sizeof(siArHeader);
+    ar.cap = capacity;
+    ar.compressed = SI_COMPRESS_NONE;
     ar.curOffset = sizeof(siArHeader);
 
     return ar;
@@ -407,7 +459,7 @@ siResult siswa_arEntryAdd(siArFile* arFile, const char* name, void* data, uint32
 siResult siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, void* data, uint32_t dataSize) {
     siArEntry newEntry;
     siByte* dataPtr;
-    size_t offset = 0;
+    size_t offset = sizeof(siArHeader);
     {
         siArEntry* entry;
         siArFile tmpArFile = *arFile;
@@ -440,7 +492,6 @@ siResult siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, 
 
     memcpy(dataPtr, data, dataSize);
     arFile->len += newEntry.size;
-
     return SI_SUCCESS;
 }
 siResult siswa_arEntryRemove(siArFile* arFile, const char* name) {
