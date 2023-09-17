@@ -1,5 +1,5 @@
 /*
-libSUarchive - a light, fast and portable library for handling Sonic Unleashed's archive file formats (.ar/.arl). 
+libSUarchive - a light, fast and portable library for handling Sonic Unleashed's archive file formats (.ar/.arl).
 ===========================================================================
 	- YOU MUST DEFINE 'SISWA_ARCHIVE_IMPLEMENTATION' in EXACTLY _one_ file that includes
 	this header, BEFORE the include like this:
@@ -129,10 +129,10 @@ typedef struct {
     uint32_t dataSize;
     /* Pointer offset to the data. Usually equivalent to 'strlen(name) + pad + sizeof(siArEntry) = .offset'. */
     uint32_t offset;
-    /* Always 0 */
-    uint32_t unknown1;
-    /* Always 0 */
-    uint32_t unknown2;
+    /* The high byte of the file date. Usually 0. */
+    uint32_t filedateHigh;
+    /* The low byte of the file data. Usually 0. */
+    uint32_t filedateLow;
 } siArEntry;
 SISWA_STATIC_ASSERT(sizeof(siArEntry) == 20);
 
@@ -564,8 +564,8 @@ siResult siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, 
     newEntry.size = dataSize + nameLen + 1 + sizeof(siArEntry);
     newEntry.dataSize = dataSize;
     newEntry.offset = nameLen + 1 + sizeof(siArEntry);
-    newEntry.unknown1 = 0;
-    newEntry.unknown2 = 0;
+    newEntry.filedateHigh = 0;
+    newEntry.filedateLow = 0;
 
     SISWA_ASSERT(offset + newEntry.size < arFile->cap, "Not enough space inside the buffer to add a new entry.");
     dataPtr = arFile->data + offset;
