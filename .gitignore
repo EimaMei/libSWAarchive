@@ -1,0 +1,24 @@
+# Folders
+build/**
+res/
+src/
+include/
+lib/
+src/
+output/
+
+
+# Files
+*.exe
+*.dll
+*.o
+.DS_Store
+*.7z
+*.zip
+*.hide
+*.S
+*.json
+Dockerfile
+*.mp3
+*.png
+Makefile

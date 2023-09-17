@@ -12,12 +12,24 @@ static char xmlData[] =
 static char msg[] = "Labas, pasauli!";
 
 
+struct pos {
+    uint64_t x, y;
+};
+
+
 int main(void) {
     /* Create the archive file */
     siArFile arFile = siswa_arCreateArContent(512);
     siswa_arEntryAdd(&arFile, "resolution.set.xml", xmlData, sizeof(xmlData));
     siswa_arEntryAdd(&arFile, "randomMessage.txt", msg, sizeof(msg));
     siswa_arEntryAdd(&arFile, "info.bin", &arFile.len, sizeof(size_t));
+
+    {
+        struct pos test;
+        test.x = UINT64_MAX;
+        test.y = INT64_MAX;
+        siswa_arEntryUpdate(&arFile, "info.bin", &test, sizeof(test));
+    }
 
     { /* Write it into a file. */
         FILE* file = fopen("test.ar.00", "w");

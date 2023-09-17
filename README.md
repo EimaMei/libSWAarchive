@@ -1,15 +1,17 @@
 # libSUarchive
-A light, fast and portable library for handling Sonic Unleashed's archive file format
+A light, fast and portable library for handling Sonic Unleashed's archive file formats (`.ar`/`.arl`). 
 
 # Features
-- Ability to go through every archive's entry.
-- Add, remove or modify any entry you request.
+- Ability to go through every archive's entries.
+- Request, add, remove or modify any entry you want.
 - Get metadata information about the file formats and their entries.
 - Merge archive files into one.
+- Generate archive linker (`.arl`) files from one or multiple archive files.
+- Create your own `.ar`/`.arl` files progrmatically.
 - Lightweight as well as single-header, making it easy to implement it in any project.
 - Focused on performance so that it wouldn't take forever to do one simple thing, like merging AR files!
 - The library is very flexible and can be used in many ways. The library never limits the user to use some hefty dependency, like the C++ STL.
-- Written in pure C89, making it portable and work perfectly on most if not all C or C++ compilers.
+- Written in pure C89, making it portable and work perfectly on most if not all C/C++ compilers.
 
 # Using the library
 The first time you include the library, you must define `SISWA_ARCHIVE_IMPLEMENTATION` before it so that the source could get compiled. 
@@ -18,3 +20,7 @@ The first time you include the library, you must define `SISWA_ARCHIVE_IMPLEMENT
 #include "libSUarchive.h"
 ```
 Any other include afterwards doesn't require the define.
+
+# Planned features
+- Add XCompression file support (Unlikely for awhile).
+- Add SEGS compressed file support (May be possible to do soon-ish).
