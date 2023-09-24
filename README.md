@@ -23,5 +23,5 @@ To use the library, you must do the following in EXACTLY _one_ C/C++ file:
 Once that's set, other files do not require the '#define' line.
 
 # Planned features
-- Add XCompression file support (Unlikely for awhile).
+- Add XCompression file support (Limited support for very small files, support for every file will take awhile).
 - `.arl` merge functions.

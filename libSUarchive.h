@@ -195,10 +195,8 @@ typedef struct { /* NOTE(EimaMei): All credit goes to https://github.com/mistyde
     uint32_t flags;
     uint32_t windowSize;
     uint32_t compressionPartitionSize;
-    uint32_t uncompressedSizeHigh;
-    uint32_t uncompressedSizeLow;
-    uint32_t compressedSizeHigh;
-    uint32_t compressedSizeLow;
+    uint64_t uncompressedSize;
+    uint64_t compressedSize;
     uint32_t uncompressedBlockSize;
     uint32_t compressedBlockSizeMax;
 } siXCompHeader;
@@ -268,6 +266,8 @@ size_t siswa_arGetEntryCount(siArFile arFile);
 
 /* Polls for the next entry in the archive. It reaches the end once it hits NULL. */
 siArEntry* siswa_arEntryPoll(siArFile* arFile);
+/* Resets the entry offset back to the start. */
+void siswa_arOffsetReset(siArFile* arFile);
 /* Finds an entry matching the provided name. Returns NULL if the entry doesn't exist. */
 siArEntry* siswa_arEntryFind(siArFile arFile, const char* name);
 /* Finds an entry matching the provided name with length. Returns NULL if the entry doesn't exist. */
@@ -380,6 +380,8 @@ size_t siswa_arlGetHeaderLength(siArlFile arlFile);
 /* Polls for the next entry in the archive linker. It reaches the end once it hits
  * NULL. */
 siArlEntry* siswa_arlEntryPoll(siArlFile* arlfile);
+/* Resets the entry offset back to the start. */
+void siswa_arlOffsetReset(siArFile* arFile);
 /* Finds an entry matching the provided name. Returns NULL if the entry doesn't
  * exist. */
 siArlEntry* siswa_arlEntryFind(siArlFile arlfile, const char* name);
@@ -431,12 +433,11 @@ void siswa_arlDecompress(siArlFile* arl, siByte* out, size_t capacity, siBool fr
  * Setting 'freeCompData' to true will do 'free(arl.data)', freeing the compressed
  * data from memory. */
 void siswa_arlDecompressSegs(siArlFile* arl, siByte *out, size_t capacity, siBool freeCompData);
-/* (TODO) Decompresses the given archive linker file using XCompression (LZX) decompression
+/*  Decompresses the given archive linker file using XCompression (LZX) decompression
  * and writes the decompressed data into 'out'. This also sets 'arl.data' to 'out'.
  * Setting 'freeCompData' to true will do 'free(arl.data)', freeing the compressed
- * data from memory.
-void siswa_arlDecompressXComp(siArlFile arl, siByte *out, size_t capacity, siBool freeData);
-*/
+ * data from memory. */
+void siswa_arlDecompressXComp(siArlFile* arl, siByte* out, size_t capacity, siBool freeCompData);
 /* Gets the exact, raw decompressed size of the data if it's X or SEGS compressed. */
 uint64_t siswa_arlGetDecompressedSize(siArFile ar);
 #endif
@@ -464,6 +465,16 @@ size_t siswa_decompressDeflate(siByte* data, size_t length, siByte* out, size_t 
 #define siswa_swap32(x)					\
     ((((x) & 0xff000000u) >> 24) | (((x) & 0x00ff0000u) >> 8)	\
     | (((x) & 0x0000ff00u) << 8) | (((x) & 0x000000ffu) << 24))
+#define siswa_swap64(x)			\
+  ((((x) & (uint64_t)0xFF00000000000000) >> 56)	\
+   | (((x) & (uint64_t)0x00FF000000000000) >> 40)	\
+   | (((x) & (uint64_t)0x0000FF0000000000) >> 24)	\
+   | (((x) & (uint64_t)0x000000FF00000000) >> 8)	\
+   | (((x) & (uint64_t)0x00000000FF000000) << 8)	\
+   | (((x) & (uint64_t)0x0000000000FF0000) << 24)	\
+   | (((x) & (uint64_t)0x000000000000FF00) << 40)	\
+   | (((x) & (uint64_t)0x00000000000000FF) << 56))
+
 
 #if 1 /* NOTE(EimaMei): Internal hashing and function stuff, can ignore */
 
@@ -595,7 +606,7 @@ siArFile siswa_arMakeBufferEx(void* data, size_t len, size_t capacity) {
         SISWA_ASSERT(identifier != SISWA_IDENTIFIER_ARL2, "Use 'siswa_arlFileOpen' for ARL2 files!");
         ar.compression = SISWA_COMPRESSION_NONE;
     }
-    SISWA_ASSERT(identifier != SISWA_IDENTIFIER_XCOMPRESSION, "Support for XCompressed files is not available.");
+    /* SISWA_ASSERT(identifier != SISWA_IDENTIFIER_XCOMPRESSION, "Support for XCompressed files is not available."); */
 
     ar.data = (siByte*)data;
     ar.len = len;
@@ -647,14 +658,17 @@ size_t siswa_arGetEntryCount(siArFile arFile) {
 siArEntry* siswa_arEntryPoll(siArFile* arFile) {
     siArEntry* entry = (siArEntry*)(arFile->data + arFile->curOffset);
     if (arFile->curOffset >= arFile->len) {
-        arFile->curOffset = sizeof(siArHeader);
+        siswa_arOffsetReset(arFile);
         return NULL;
     }
 
     arFile->curOffset += entry->size;
     return entry;
 }
-
+void siswa_arOffsetReset(siArFile* arFile) {
+    SISWA_ASSERT_NOT_NULL(arFile);
+    arFile->curOffset = sizeof(siArHeader);
+}
 siArEntry* siswa_arEntryFind(siArFile arFile, const char* name) {
     return siswa_arEntryFindEx(arFile, name, strlen(name));
 }
@@ -861,8 +875,11 @@ uint64_t siswa_arGetDecompressedSize(siArFile ar) {
     switch (ar.compression) {
         case SISWA_COMPRESSION_NONE: return ar.len;
         case SISWA_COMPRESSION_X: {
-            siXCompHeader* header = (siXCompHeader*)ar.data;
-            return ((uint64_t)header->uncompressedSizeHigh << 32) | header->uncompressedSizeLow;
+            uint64_t length = ((siXCompHeader*)ar.data)->uncompressedSize;
+            if (siswa_isLittleEndian()) {
+                length = siswa_swap64(length);
+            }
+            return length;
         }
         case SISWA_COMPRESSION_SEGS: {
             uint64_t data = ((siSegsHeader*)ar.data)->fullSize;
@@ -1024,12 +1041,16 @@ siArlEntry* siswa_arlEntryPoll(siArlFile* arlFile) {
 
     entry = (siArlEntry*)(arlFile->data + arlFile->curOffset);
     if (arlFile->curOffset >= arlFile->len) {
-        arlFile->curOffset = siswa_arlGetHeaderLength(*arlFile);
+        siswa_arlOffsetReset(arlFile);
         return NULL;
     }
 
     arlFile->curOffset += entry->len + 1;
     return entry;
+}
+void siswa_arlOffsetReset(siArlFile* arlFile) {
+    SISWA_ASSERT_NOT_NULL(arlFile);
+    arlFile->curOffset = siswa_arlGetHeaderLength(*arlFile);
 }
 siArlEntry* siswa_arlEntryFind(siArlFile arlFile, const char* name) {
     return siswa_arlEntryFindEx(arlFile, name, strlen(name));
@@ -1182,8 +1203,7 @@ void siswa_arlDecompress(siArlFile* arl, siByte* out, size_t capacity, siBool fr
             break;
         }
         case SISWA_COMPRESSION_X: {
-            SISWA_ASSERT(arl->compression != SISWA_COMPRESSION_X,
-                    "XCompressed files are not supported for decompressing.");
+            siswa_arlDecompressXComp(arl, out, capacity, freeCompData);
             break;
         }
     }
@@ -1252,13 +1272,74 @@ void siswa_arlDecompressSegs(siArlFile* arl, siByte* out, size_t capacity, siBoo
         arl->compression = SISWA_COMPRESSION_NONE;
     }
 }
+void siswa_arlDecompressXComp(siArlFile* arl, siByte* out, size_t capacity, siBool freeCompData) {
+    SISWA_ASSERT_NOT_NULL(arl);
+    SISWA_ASSERT_NOT_NULL(out);
+    SISWA_ASSERT(arl->compression == SISWA_COMPRESSION_X, "Wrong compression type.");
+
+    {
+        siXCompHeader* header = (siXCompHeader*)arl->data;
+        uint32_t uncompBlockSize = header->uncompressedBlockSize;
+        uint32_t compBlockMax = header->compressedBlockSizeMax;
+        uint64_t fullSize = header->uncompressedSize;
+
+        siByte* curDataOffset = (siByte*)(header + 1);
+        if (siswa_isLittleEndian()) {
+            uncompBlockSize = siswa_swap32(uncompBlockSize);
+            compBlockMax = siswa_swap32(compBlockMax);
+            fullSize = siswa_swap64(fullSize);
+        }
+        while (SISWA_TRUE) {
+            uint32_t compressedBlockSize;
+            uint32_t unknown;
+            uint32_t uncompressedBlockSize;
+
+            compressedBlockSize = *(uint32_t*)curDataOffset;
+            curDataOffset += sizeof(uint32_t);
+
+            unknown = *(uint8_t*)curDataOffset;
+            curDataOffset += sizeof(uint8_t);
+
+            if (unknown == 0) {
+                break;
+            }
+
+            uncompressedBlockSize = *(uint16_t*)curDataOffset;
+            curDataOffset += 20;
+
+
+            if (siswa_isLittleEndian()) {
+                compressedBlockSize = siswa_swap32(compressedBlockSize);
+                uncompressedBlockSize = siswa_swap16(uncompressedBlockSize);
+            }
+            SISWA_ASSERT(uncompressedBlockSize == uncompressedBlockSize, "Cannot decompress this XCompressed file.");
+
+            if (uncompressedBlockSize == uncompBlockSize) {
+                memcpy(out, curDataOffset, uncompressedBlockSize);
+            }
+
+            curDataOffset += compressedBlockSize;
+        }
+        arl->len = fullSize;
+        arl->cap = capacity;
+
+        if (freeCompData) {
+            free(arl->data);
+        }
+        arl->data = out;
+        arl->compression = SISWA_COMPRESSION_NONE;
+    }
+}
 
 uint64_t siswa_arlGetDecompressedSize(siArlFile arl) {
     switch (arl.compression) {
         case SISWA_COMPRESSION_NONE: return arl.len;
         case SISWA_COMPRESSION_X: {
-            siXCompHeader* header = (siXCompHeader*)arl.data;
-            return ((uint64_t)header->uncompressedSizeHigh << 32) | header->uncompressedSizeLow;
+            uint64_t length = ((siXCompHeader*)arl.data)->uncompressedSize;
+            if (siswa_isLittleEndian()) {
+                length = siswa_swap64(length);
+            }
+            return length;
         }
         case SISWA_COMPRESSION_SEGS: {
             uint32_t data = ((siSegsHeader*)arl.data)->fullSize;
