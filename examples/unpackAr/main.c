@@ -3,18 +3,19 @@
 
 
 int main(void) {
-    siArFile ar = siswa_arMake("res/pan.ar.00");
-    siArEntry* entry;
+	siArFile ar = siswa_arMake("res/pan.ar.00");
+	siArEntry* entry;
 
-    while ((entry = siswa_arEntryPoll(&ar))) {
-        char* filename = siswa_arEntryGetName(entry);
-        void* data = siswa_arEntryGetData(entry);
+	while (siswa_arEntryPoll(&ar, &entry)) {
+		char* filename = siswa_arEntryGetName(entry);
+		void* data = siswa_arEntryGetData(entry);
 
-        FILE* file = fopen(filename, "wb");
-        fwrite(data, entry->dataSize, 1, file);
-        fclose(file);
-    }
+		FILE* file = fopen(filename, "wb");
+		fwrite(data, entry->dataSize, 1, file);
+		fclose(file);
+	}
 
-    free(ar.data);
-    return 0;
+	free(ar.data);
+	return 0;
 }
+

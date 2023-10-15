@@ -264,8 +264,10 @@ siArHeader* siswa_arGetHeader(siArFile arFile);
 /* Gets the total entry count of the archive file. */
 size_t siswa_arGetEntryCount(siArFile arFile);
 
-/* Polls for the next entry in the archive. It reaches the end once it hits NULL. */
-siArEntry* siswa_arEntryPoll(siArFile* arFile);
+/* Polls for the next entry in the archive, as the data gets written to 'outEntry'
+ * Returns 'SISWA_TRUE' if an entry was polled, 'SISWA_FALSE' if there are no more
+ * entries in the ar file. */
+siBool siswa_arEntryPoll(siArFile* arFile, siArEntry** outEntry);
 /* Resets the entry offset back to the start. */
 void siswa_arOffsetReset(siArFile* arFile);
 /* Finds an entry matching the provided name. Returns NULL if the entry doesn't exist. */
@@ -377,9 +379,10 @@ size_t siswa_arlGetEntryCount(siArlFile arlFile);
 /* Gets the actual length of the linker's header. */
 size_t siswa_arlGetHeaderLength(siArlFile arlFile);
 
-/* Polls for the next entry in the archive linker. It reaches the end once it hits
- * NULL. */
-siArlEntry* siswa_arlEntryPoll(siArlFile* arlfile);
+/* Polls for the next entry in the archive linker, as the data gets written to
+ * 'entry'. Returns 'SISWA_TRUE' if the entry was polled successfully, 'SISWA_FALSE'
+ * if there are no more entries to poll. */
+siBool siswa_arlEntryPoll(siArlFile* arlfile, siArlEntry** outEntry);
 /* Resets the entry offset back to the start. */
 void siswa_arlOffsetReset(siArFile* arFile);
 /* Finds an entry matching the provided name. Returns NULL if the entry doesn't
@@ -648,22 +651,24 @@ siArHeader* siswa_arGetHeader(siArFile arFile) {
 }
 size_t siswa_arGetEntryCount(siArFile arFile) {
 	size_t count = 0;
-	while (siswa_arEntryPoll(&arFile) != NULL) {
+	siArEntry* entry;
+	while (siswa_arEntryPoll(&arFile, &entry)) {
 		count += 1;
 	}
 
 	return count;
 }
 
-siArEntry* siswa_arEntryPoll(siArFile* arFile) {
+siBool siswa_arEntryPoll(siArFile* arFile, siArEntry** outEntry) {
 	siArEntry* entry = (siArEntry*)(arFile->data + arFile->curOffset);
 	if (arFile->curOffset >= arFile->len) {
 		siswa_arOffsetReset(arFile);
-		return NULL;
+		return SISWA_FALSE;
 	}
 
 	arFile->curOffset += entry->size;
-	return entry;
+	*outEntry = entry;
+	return SISWA_TRUE;
 }
 void siswa_arOffsetReset(siArFile* arFile) {
 	SISWA_ASSERT_NOT_NULL(arFile);
@@ -678,7 +683,7 @@ siArEntry* siswa_arEntryFindEx(siArFile arFile, const char* name, size_t nameLen
 
 	SISWA_ASSERT_NOT_NULL(name);
 
-	while ((entry = siswa_arEntryPoll(&arFile)) != NULL) {
+	while (siswa_arEntryPoll(&arFile, &entry)) {
 		char* entryName = siswa_arEntryGetName(entry);
 		if (*name == *entryName && strncmp(name + 1, entryName + 1, nameLen - 1) == 0) {
 			return entry;
@@ -710,7 +715,7 @@ siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, vo
 		siArEntry* entry;
 		siArFile tmpArFile = *arFile;
 
-		while ((entry = siswa_arEntryPoll(&tmpArFile)) != NULL) {
+		while (siswa_arEntryPoll(&tmpArFile, &entry)) {
 			const char* entryName = siswa_arEntryGetName(entry);
 			offset = tmpArFile.curOffset;
 
@@ -818,9 +823,6 @@ siArFile siswa_arMergeMul(siArFile* arrayOfArs, size_t arrayLen, void* outBuffer
 	siByte* buffer = ogBuffer;
 	size_t i;
 	siHashTable* ht;
-	uint32_t res;
-	siArFile curAr;
-	siArEntry* entry;
 	size_t totalSize = sizeof(siArHeader);
 
 	SISWA_ASSERT_NOT_NULL(arrayOfArs);
@@ -840,8 +842,10 @@ siArFile siswa_arMergeMul(siArFile* arrayOfArs, size_t arrayLen, void* outBuffer
 	}
 
 	for (i = 0; i < arrayLen; i++) {
-		curAr = arrayOfArs[i];
-		while ((entry = siswa_arEntryPoll(&curAr)) != NULL) {
+		siArEntry* entry;
+		uint32_t res;
+		siArFile curAr = arrayOfArs[i];
+		while (siswa_arEntryPoll(&curAr, &entry)) {
 			char* name = siswa_arEntryGetName(entry);
 			res = si_hashtable_exists(ht, name);
 
@@ -997,7 +1001,7 @@ siArlFile siswa_arlCreateFromAr(siArFile arFile, void* outBuffer, size_t capacit
 	siArlFile arl = siswa_arlCreateArlContentEx(outBuffer, capacity, 1);
 
 	siArEntry* entry;
-	while ((entry = siswa_arEntryPoll(&arFile))) {
+	while (siswa_arEntryPoll(&arFile, &entry)) {
 		const char* name = siswa_arEntryGetName(entry);
 		siswa_arlEntryAdd(&arl, name, 0);
 	}
@@ -1011,7 +1015,7 @@ siArlFile siswa_arlCreateFromArMul(siArFile* arrayOfArs, size_t arrayLen,
 	size_t i;
 	for (i = 0; i < arrayLen; i += 1) {
 		siArEntry* entry;
-		while ((entry = siswa_arEntryPoll(&arrayOfArs[i]))) {
+		while (siswa_arEntryPoll(&arrayOfArs[i], &entry)) {
 			const char* name = siswa_arEntryGetName(entry);
 			siswa_arlEntryAdd(&arl, name, i);
 		}
@@ -1025,7 +1029,8 @@ siArlHeader* siswa_arlGetHeader(siArlFile arlFile) {
 }
 size_t siswa_arlGetEntryCount(siArlFile arFile) {
 	size_t count = 0;
-	while (siswa_arlEntryPoll(&arFile) != NULL) {
+	siArlEntry* entry;
+	while (siswa_arlEntryPoll(&arFile, &entry)) {
 		count += 1;
 	}
 	return count;
@@ -1035,18 +1040,21 @@ size_t siswa_arlGetHeaderLength(siArlFile arlFile) {
 	return (sizeof(siArlHeader) - sizeof(uint32_t)) + header->archiveCount * sizeof(uint32_t);
 }
 
-siArlEntry* siswa_arlEntryPoll(siArlFile* arlFile) {
+siBool siswa_arlEntryPoll(siArlFile* arlFile, siArlEntry** outEntry) {
 	siArlEntry* entry;
 	SISWA_ASSERT_NOT_NULL(arlFile);
+	SISWA_ASSERT_NOT_NULL(outEntry);
 
 	entry = (siArlEntry*)(arlFile->data + arlFile->curOffset);
 	if (arlFile->curOffset >= arlFile->len) {
 		siswa_arlOffsetReset(arlFile);
-		return NULL;
+		return SISWA_FALSE;
 	}
 
 	arlFile->curOffset += entry->len + 1;
-	return entry;
+	*outEntry = entry;
+
+	return SISWA_TRUE;
 }
 void siswa_arlOffsetReset(siArlFile* arlFile) {
 	SISWA_ASSERT_NOT_NULL(arlFile);
@@ -1061,7 +1069,7 @@ siArlEntry* siswa_arlEntryFindEx(siArlFile arFile, const char* name, size_t name
 
 	SISWA_ASSERT_NOT_NULL(name);
 
-	while ((entry = siswa_arlEntryPoll(&arFile)) != NULL) {
+	while (siswa_arlEntryPoll(&arFile, &entry)) {
 		if (*name == *entry->string && strncmp(name + 1, entry->string + 1, nameLen - 1) == 0) {
 			return entry;
 		}
@@ -1090,7 +1098,7 @@ siBool siswa_arlEntryAddEx(siArlFile* arlFile, const char* name, uint8_t nameLen
 		siArlEntry* entry;
 		siArlFile tmpArFile = *arlFile;
 
-		while ((entry = siswa_arlEntryPoll(&tmpArFile)) != NULL) {
+		while (siswa_arlEntryPoll(&tmpArFile, &entry)) {
 			const char* entryName = entry->string;
 			offset = tmpArFile.curOffset;
 
