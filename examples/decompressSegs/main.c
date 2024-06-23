@@ -3,14 +3,13 @@
 
 
 int main(void) {
-	/* Prepare the variables/ */
 	siArFile ar;
 	uint64_t size;
 
 	/* Open the .ar file and check for the compression type. */
 	ar = siswa_arMake("res/BossPetra.ar.00");
 	size = siswa_arGetDecompressedSize(ar);
-	printf("Compression info: 'type' - %i, 'size' - %lu bytes\n", ar.compression, size);
+	printf("Compression info: 'type' - %i, 'size' - %lu bytes\n", ar.type, size);
 
 	{ /* Decompress the content. */
 		siByte* buffer = malloc(size);

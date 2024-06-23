@@ -50,7 +50,7 @@ int main(void) {
 			totalSize += files[i].len + strlen(filenames[i]) + sizeof(siArEntry) + 6;
 		}
 	}
-	ar = siswa_arCreateArContent(totalSize);
+	ar = siswa_arCreateContent(totalSize);
 
 	{ /* Pack them all into one archive. */
 		size_t i;

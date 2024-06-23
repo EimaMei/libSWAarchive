@@ -3,7 +3,6 @@
 
 
 int main(void) {
-	/* Prepare the variables. */
 	siArFile mergedAr;
 	siByte buffer[512];
 	siArFile arFiles[3];

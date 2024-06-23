@@ -3,7 +3,7 @@
 
 
 int main(void) {
-	siArlFile arl = siswa_arlCreateArlContent(256, 1);
+	siArlFile arl = siswa_arlCreateContent(256, 1);
 	siswa_arlEntryAdd(&arl, "Name", 0);
 	siswa_arlEntryAdd(&arl, "some_file.xml", 0);
 	siswa_arlEntryAdd(&arl, "old.txt", 0);

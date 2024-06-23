@@ -19,15 +19,15 @@ struct pos {
 
 int main(void) {
 	/* Create the archive file */
-	siArFile arFile = siswa_arCreateArContent(512);
+	siArFile arFile = siswa_arCreateContent(512);
 	siswa_arEntryAdd(&arFile, "resolution.set.xml", xmlData, sizeof(xmlData));
 	siswa_arEntryAdd(&arFile, "randomMessage.txt", msg, sizeof(msg));
 	siswa_arEntryAdd(&arFile, "info.bin", &arFile.len, sizeof(size_t));
 
 	{
 		struct pos test;
-		test.x = UINT64_MAX;
-		test.y = INT64_MAX;
+		test.x = (uint64_t)1 << 63;
+		test.y = (uint64_t)1 << 62;
 		siswa_arEntryUpdate(&arFile, "info.bin", &test, sizeof(test));
 	}
 

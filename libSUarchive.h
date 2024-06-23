@@ -1,5 +1,7 @@
 /*
-libSUarchive - a light, fast and portable library for handling Sonic Unleashed's archive file formats (.ar/.arl).
+libSWAarchive - a light, fast and portable library for handling Sonic World
+Adventure's/Unleashed's archive file formats (.ar/.arl).
+
 1. Introduction
 ===========================================================================
 	- To use the library, you must do the following in EXACTLY _one_ C/C++ file:
@@ -10,18 +12,17 @@ libSUarchive - a light, fast and portable library for handling Sonic Unleashed's
 	Once that's set, other files do not require the '#define' line.
 
 	- There are two primary methods of using the libSUarchive library. The first
-	one is to simply use 'siswa_<ar/arl>Make(const char*)`, which uses the C File
-	IO functions to read the data from the given file path, as well as allocates
-	the content into the heap. This function requires <stdlib.h>, as well as to call
-	'siswa_<ar/arl>Free`/`free(var.data)` at the end to free the data from RAM.
+	one is using 'siswa_<ar/arl>Make(const char*)`, which utilizes the C standard
+	library's IO functions, and its heap memory allocation functions. Making use
+	of this method requires the C standard, as well as to call 'siswa_<ar/arl>Free`
+	or simply `free(var.data)` at the end.
 
-	The second method is using `siswa_<arl/arl>MakeBuffer(void*, size_t)', which
-	asks for both the buffer and length of said buffer. This method doesn't use any
-	stdlib/stdio.h functions or allocates anything to the memory, as it's now the
-	user's liberty to read and input the archive file data.
+	If you cannot use the IO functions or want to specify your own buffer, the
+	`siswa_<ar/arl>MakeBuffer(void*, size_t)` functions achieve the same results
+	as the previously mentioned ones, except a buffer and the size of it is requested.
 
-	Both methods also contain expanded versions (siswa_<funct>Ex), where you can
-	either specify for more memory to be allocated (for something like adding more
+	Both methods also contain expanded versions (siswa_<func>Ex), where you can
+	either specify for more memory to be allocated (required for adding more
 	entries) or to specify the full capacity of the buffer.
 
 2. Configuration macros
@@ -35,34 +36,41 @@ libSUarchive - a light, fast and portable library for handling Sonic Unleashed's
 	```
 
 	1. SISWA_NO_STDLIB:
-		- This macro makes siswa not include <stdlib.h>, as well as disables
-		functions that use it. This includes functions like 'siswa_arMake', as it
-		both uses 'malloc' and 'fopen', meaning you must use 'siswa_arMakeBuffer'
-		instead.
+		- Disables the inclusion of the C standard and IO libraries, meaning
+		functions that utilizes said libraries (like 'siswa_arMake') won't work.
+
 	2. SISWA_NO_ASSERT:
 		- Disables any assertions in the codebase. Recommended to use for when
 		building the release version of the program. Defining NDEBUG achieves
 		the same result.
+
 	3. SISWA_NO_STDINT
-		- Disables the includes of <stdint.h> and <stddef.h>. However, the library
-		expects for certain int types to exist already with their correct sizes
-		before the include of the library, otherwise the app won't compile.
+		- Disables the includes of <stdint.h> and <stddef.h>. If a non C99 compiler
+		is used, siswa  will attempt to automatically find the correct types. If
+		the wrong types are found or specified, static assertions will be fired
+		out and in that situation you'll have to specify the correct types.
+
 		The list of types being:
-			- uint8_t           - 1 byte, unsigned.
-			- uint16_t, int16_t - 2 bytes, both signed and unsigned.
-			- uint32_t, int32_t - 4 bytes, both signed and unsigned.
-			- uint64_t, int64_t - 8 bytes, both signed and unsigned.
+			- uint32_t, int32_t - 4 bytes, signed and unsigned.
+			- uint64_t, int64_t - 8 bytes, signed and unsigned.
 			- size_t            - must equal to 'sizeof(void*)' bytes, unsigned.
+
 	4. SISWA_NO_DECOMPRESSION
 		- Completely disables any decompression features in the library.
+
 	5. SISWA_DEFINE_CUSTOM_DEFLATE_DECOMPRESSION
 		- Disables siswa's implementation of Deflate decompression, but keeps
 		intact SEGS decompression functions like 'siswa_arDecompressSegs'.
-		In turn the user must define the function 'siswa_decompressDeflate'
-		with the correct output.
+		In turn the user must  implement their own 'siswa_decompressDeflate'
+		function inside their source.
+
 	6. SISWA_USE_PRAGMA_PACK
 		- Uses '#pragma pack(push, 1)' for every struct inside the file to achieve
-		the required struct sizes. Turned off by default for portability reasons.
+		guaranteed correct struct sizes. Turned off by default for portability reasons.
+
+	7. SISWA_MEMCPY, SISWA_STRLEN, SISWA_STRNCMP or SISWA_MEMSET
+		- Replaces base C standard library version of the function with the
+		specified custom one when they're called in the library.
 
 3. Other
 ===========================================================================
@@ -70,11 +78,12 @@ CREDITS:
 	- HedgeServer (discord) - helping out to figure out the behaviour and format
 		of .ar/.arl files.
 	- HedgeLib (https://github.com/Radfordhound/HedgeLib) - some of the header
-		documentation taken from 'hl_hh_archive.h'.
+		documentation were taken from 'hl_hh_archive.h'.
 	- sinfl.h (https://github.com/vurtun/lib) - the base code forming the Deflate
 		decompressing function in siswa.
 	- General Schnitzel - some general help, moral support(?) as well as providing
 		useful .ar files to test the library with.
+
 LICENSE:
 	- This software is licensed under the zlib license (see the LICENSE in the
 	bottom of the file).
@@ -93,35 +102,97 @@ extern "C" {
 #endif
 
 #ifndef SISWA_NO_STDINT
-	#include <stdint.h>
+	#if defined(__STDC_VERSION__) || (defined(__cplusplus) && __cplusplus >= 201103L)
+		#include <stdint.h>
+	#endif
 	#include <stddef.h>
 #endif
-
 
 #ifndef SISWA_NO_STDLIB
 	#include <stdlib.h>
 	#include <stdio.h>
 #endif
-#include <string.h> /* memcpy and stuff */
+
+#ifdef NDEBUG
+	#define SISWA_NO_ASSERT
+#endif
 
 #ifndef SISWA_NO_ASSERT
-	#include <assert.h> /* assert */
+	#ifndef SISWA_ASSERT_MSG
+		#define SISWA_ASSERT_MSG(condition, msg) do { \
+			if ((condition) == 0) { \
+				fprintf( \
+					stderr, \
+					"Assertion \"" #condition "\" at \"" __FILE__ ":%d\": " #msg ".", \
+					__LINE__ \
+				); \
+				abort(); \
+			} \
+		} while (0)
+	#endif
+#else
+	#define SISWA_ASSERT_MSG(condition, msg)  ((void)(condition), (void)(msg))
+#endif
+
+#ifndef SISWA_MEMCPY
+	#include <string.h>
+	#define SISWA_MEMCPY memcpy
+	#define SISWA_MEMSET memset
+#endif
+
+#ifndef SISWA_STRNCMP
+	#include <string.h>
+	#define SISWA_STRNCMP strncmp
+#endif
+
+#ifndef SISWA_STRLEN
+	#include <string.h>
+	#define SISWA_STRLEN strlen
 #endif
 
 
-
-#if !defined(SISWA_ASSERT) && !defined(SISWA_NO_ASSERT)
-	#define SISWA_ASSERT(x, msg) assert(x); (void)(msg)
-
-#elif !defined(SISWA_ASSERT) && defined(SISWA_NO_ASSERT)
-	#define SISWA_ASSERT(x, msg)  ((void)(x), (void)(msg))
-#endif
-
-#define SISWA_ASSERT_NOT_NULL(ptr) SISWA_ASSERT((ptr) != NULL, #ptr " must not be NULL.")
+#define SISWA_ASSERT_NOT_NULL(ptr) SISWA_ASSERT_MSG((ptr) != NULL, #ptr " must not be NULL.")
+#define SISWA_ASSERT(condition) SISWA_ASSERT_MSG(condition, "Assertion '" #condition "` failed")
+#define SISWA_PANIC() SISWA_ASSERT_MSG(SISWA_FALSE, "SISWA_PANIC()! Wrong data was given")
 
 #define SISWA_STATIC_ASSERT2(cond, msg)  typedef char static_assertion_##msg[(!!(cond)) * 2 - 1] /* NOTE(EimaMei): This is absolutely stupid but somehow it works so who cares */
 #define SISWA_STATIC_ASSERT1(cond, line) SISWA_STATIC_ASSERT2(cond, line)
 #define SISWA_STATIC_ASSERT(cond)        SISWA_STATIC_ASSERT1(cond, __LINE__)
+
+
+#if defined(SISWA_NO_STDINT) || !defined(UINT32_MAX)
+	#ifndef uint8_t
+		typedef unsigned char uint8_t;
+	#endif
+
+	#ifndef uint16_t
+		typedef unsigned short uint16_t;
+	#endif
+
+	#ifndef int32_t
+		typedef signed int int32_t;
+	#endif
+
+	#ifndef uint32_t
+		typedef unsigned int uint32_t;
+	#endif
+
+	#ifndef int64_t
+		#if defined(_win32) || defined(_win64) || (defined(__cygwin__) && !defined(_win32))
+			typedef signed __int64 int64_t;
+		#else
+			typedef signed long int64_t;
+		#endif
+	#endif
+
+	#ifndef yint64_t
+		#if defined(_win32) || defined(_win64) || (defined(__cygwin__) && !defined(_win32))
+			typedef unsigned __int64 int64_t;
+		#else
+			typedef unsigned long uint64_t;
+		#endif
+	#endif
+#endif
 
 SISWA_STATIC_ASSERT(sizeof(uint8_t) == 1);
 SISWA_STATIC_ASSERT(sizeof(uint16_t) == 2);
@@ -137,22 +208,22 @@ SISWA_STATIC_ASSERT(sizeof(size_t) == sizeof(void*));
 typedef uint32_t siBool;
 
 
-/* The alignment value set in the archive files. The actual proper definition would be
- * the processor's computing bit (hence why Unleashed uses 64 for the alignment as
- * the X360/PS3 are both 64-bit). If for whatever reason you're planning to use the
+/* The alignment value set in the archive files. The actual proper definition
+ * would be the processor's computing bit (hence why Sonic Adventure uses 64 for the
+ * alignment as the X360/PS3 are both 64-bit). If for whatever reason you're planning to use the
  * library on different computing bit CPUs, you should change this value to the
  * value that matches the computing bit of the CPU, or set it as '(sizeof(size_t) * 8)'.*/
 #define SISWA_DEFAULT_HEADER_ALIGNMENT 64
 
-#define SISWA_DEFAULT_STACK_SIZE 8 * 1024 /* NOTE(EimaMei): Used for storing string pointers.
-										  The higher the value, the less likely a hash collision will happen.
-										  8kb is a good middleground balance on the major OSses, but probably not
-										  for actual embedded systems.*/
+/* Used for storing string pointers. The higher the value, the less likely a hash
+ * collision will happen. 8kb is a good middleground balance on the major OSses,
+ * but probably not for actual embedded systems.*/
+#define SISWA_DEFAULT_STACK_SIZE (8 * 1024)
 
-#define SISWA_SUCCESS 1
-#define SISWA_FAILURE 0
 #define SISWA_TRUE    1
 #define SISWA_FALSE   0
+#define SISWA_SUCCESS SISWA_TRUE
+#define SISWA_FAILURE SISWA_FALSE
 
 /* Length of the array can be anything from 1 to beyond. */
 #define SISWA_UNSPECIFIED_LEN 1
@@ -166,10 +237,11 @@ typedef uint32_t siBool;
 #endif
 
 typedef enum {
-	SISWA_COMPRESSION_NONE,
-	SISWA_COMPRESSION_X,
-	SISWA_COMPRESSION_SEGS
-} siCompressType;
+	SISWA_FILE_REGULAR = 1,
+	SISWA_FILE_INVALID,
+	SISWA_FILE_XCOMPRESS,
+	SISWA_FILE_SEGS
+} siFileType;
 
 typedef struct {
 	uint32_t identifier;
@@ -230,7 +302,7 @@ SISWA_STATIC_ASSERT(sizeof(siArEntry) == 20);
 
 
 typedef struct {
-	/* Pointer to the contents of the data. If `siswa_xMake' or 'siswa_xCreateArContent'
+	/* Pointer to the contents of the data. If `siswa_<ar/arl>Make' or 'siswa_<ar/arl>CreateContent'
 	 * was used, the data is malloced and must be freed. */
 	siByte* data;
 	/* Current length of the content. Changes between entry modifications. */
@@ -238,10 +310,11 @@ typedef struct {
 	/* Total memory capacity of '.data'. */
 	size_t cap;
 
-	/* Compress type of the content. */
-	siCompressType compression;
-	/* Current entry offset, modified by 'siswa_xEntryPoll'. Should not be modified otherwise.*/
-	size_t curOffset;
+	/* Type of file. Denotes if the provided data is compressed or even valid. */
+	siFileType type;
+	/* Current entry offset, modified by 'siswa_<ar/arl>EntryPoll'. Should not
+	 * be modified by the user under normal circumstances.*/
+	size_t __curOffset;
 } siArFile;
 
 
@@ -255,9 +328,9 @@ siArFile siswa_arMakeBuffer(void* data, size_t len);
 siArFile siswa_arMakeBufferEx(void* data, size_t len, size_t capacity);
 
 /* Creates a 'siArFile' structure and allocates an archive file in memory from the provided capacity. */
-siArFile siswa_arCreateArContent(size_t capacity);
+siArFile siswa_arCreateContent(size_t capacity);
 /* Creates a 'siArFile' structure and creates an archive file in memory from the provided buffer and capacity. */
-siArFile siswa_arCreateArContentEx(void* buffer, size_t capacity);
+siArFile siswa_arCreateContentEx(void* buffer, size_t capacity);
 
 /* Gets the header of the archive file. */
 siArHeader* siswa_arGetHeader(siArFile arFile);
@@ -361,10 +434,10 @@ siArlFile siswa_arlMakeBufferEx(void* data, size_t len, size_t capacity);
 
 /* Creates a 'siArlFile' structure and allocates an archive linker file in memory
  * from the provided capacity. */
-siArlFile siswa_arlCreateArlContent(size_t capacity, size_t archiveCount);
+siArlFile siswa_arlCreateContent(size_t capacity, size_t archiveCount);
 /* Creates a 'siArlFile' structure and creates an archive linker in memory from the
  * provided buffer and capacity. */
-siArlFile siswa_arlCreateArlContentEx(void* buffer, size_t capacity, size_t archiveCount);
+siArlFile siswa_arlCreateContentEx(void* buffer, size_t capacity, size_t archiveCount);
 
 /* Generates an archive linker in 'outBuffer' from the provided archive. */
 siArlFile siswa_arlCreateFromAr(siArFile arFile, void* outBuffer, size_t capacity);
@@ -435,7 +508,7 @@ void siswa_arlDecompress(siArlFile* arl, siByte* out, size_t capacity, siBool fr
  * and writes the decompressed data into 'out'. This also sets 'arl.data' to 'out'.
  * Setting 'freeCompData' to true will do 'free(arl.data)', freeing the compressed
  * data from memory. */
-void siswa_arlDecompressSegs(siArlFile* arl, siByte *out, size_t capacity, siBool freeCompData);
+void siswa_arlDecompressSegs(siArlFile* arl, siByte* out, size_t capacity, siBool freeCompessedData);
 /*  Decompresses the given archive linker file using XCompression (LZX) decompression
  * and writes the decompressed data into 'out'. This also sets 'arl.data' to 'out'.
  * Setting 'freeCompData' to true will do 'free(arl.data)', freeing the compressed
@@ -462,7 +535,6 @@ size_t siswa_decompressDeflate(siByte* data, size_t length, siByte* out, size_t 
 
 #if defined(SISWA_ARCHIVE_IMPLEMENTATION)
 
-/* autism macros */
 #define siswa_swap16(x) \
 	((uint16_t)((((x) >> 8) & 0xff) | (((x) & 0xff) << 8)))
 #define siswa_swap32(x)					\
@@ -510,7 +582,7 @@ siHashTable* si_hashtable_make_reserve(void* mem, size_t capacity) {
 	siHashTable* table = (siHashTable*)mem;
 	table->capacity = capacity;
 	table->entries = (char**)(table + 1);
-	memset(table->entries, 0, capacity * sizeof(char*)); /* TODO(EimaMei): Do we need this? */
+	SISWA_MEMSET(table->entries, 0, capacity * sizeof(char*)); /* TODO(EimaMei): Do we need this? */
 
 	return table;
 }
@@ -595,53 +667,52 @@ siArFile siswa_arMakeBufferEx(void* data, size_t len, size_t capacity) {
 	uint32_t identifier;
 
 	SISWA_ASSERT_NOT_NULL(data);
-	SISWA_ASSERT(len <= capacity, "The length cannot be larger than the total capacity");
+	SISWA_ASSERT_MSG(len <= capacity, "The length cannot be larger than the capacity");
 
-	identifier = *(uint32_t*)data;
+	identifier = siswa_isLittleEndian()
+		? *(uint32_t*)data
+		: siswa_swap32(*(uint32_t*)data);
 
-	if (identifier == SISWA_IDENTIFIER_XCOMPRESSION) {
-		ar.compression = SISWA_COMPRESSION_X;
+	switch (identifier) {
+		case SISWA_IDENTIFIER_ARL2: ar.type = SISWA_FILE_REGULAR; break;
+		case SISWA_IDENTIFIER_XCOMPRESSION: ar.type = SISWA_FILE_XCOMPRESS; break;
+		case SISWA_IDENTIFIER_SEGS: ar.type = SISWA_FILE_SEGS; break;
+		default: ar.type = SISWA_FILE_INVALID;
 	}
-	else if (identifier == SISWA_IDENTIFIER_SEGS) {
-		ar.compression = SISWA_COMPRESSION_SEGS;
-	}
-	else {
-		SISWA_ASSERT(identifier != SISWA_IDENTIFIER_ARL2, "Use 'siswa_arlFileOpen' for ARL2 files!");
-		ar.compression = SISWA_COMPRESSION_NONE;
-	}
-	/* SISWA_ASSERT(identifier != SISWA_IDENTIFIER_XCOMPRESSION, "Support for XCompressed files is not available."); */
 
 	ar.data = (siByte*)data;
 	ar.len = len;
 	ar.cap = capacity;
-	ar.curOffset = sizeof(siArHeader);
+	ar.__curOffset = sizeof(siArHeader);
 
 	return ar;
 }
 
 #ifndef SISWA_NO_STDLIB
-siArFile siswa_arCreateArContent(size_t capacity) {
-	return siswa_arCreateArContentEx(malloc(capacity + sizeof(siArHeader)), capacity);
+siArFile siswa_arCreateContent(size_t capacity) {
+	return siswa_arCreateContentEx(malloc(capacity + sizeof(siArHeader)), capacity);
 }
 #endif
-siArFile siswa_arCreateArContentEx(void* buffer, size_t capacity) {
+siArFile siswa_arCreateContentEx(void* buffer, size_t capacity) {
 	siArHeader header;
 	siArFile ar;
 
 	SISWA_ASSERT_NOT_NULL(buffer);
-	SISWA_ASSERT(capacity >= sizeof(siArHeader), "Capacity must be at least equal to or be higher than 'sizeof(siArHeader)'.");
+	SISWA_ASSERT_MSG(
+		capacity >= sizeof(siArHeader), "Capacity must be at least equal to or be higher than 'sizeof(siArHeader)'"
+	);
 
 	header.unknown = 0;
 	header.headerSizeof = sizeof(siArHeader);
 	header.entrySizeof = sizeof(siArEntry);
 	header.alignment = SISWA_DEFAULT_HEADER_ALIGNMENT;
-	memcpy(buffer, &header, sizeof(siArHeader));
+	SISWA_MEMCPY(buffer, &header, sizeof(siArHeader));
 
 	ar.data = (siByte*)buffer;
 	ar.len = sizeof(siArHeader);
 	ar.cap = capacity;
-	ar.compression = SISWA_COMPRESSION_NONE;
-	ar.curOffset = sizeof(siArHeader);
+	ar.type = SISWA_FILE_REGULAR;
+	ar.__curOffset = sizeof(siArHeader);
 
 	return ar;
 }
@@ -660,29 +731,28 @@ size_t siswa_arGetEntryCount(siArFile arFile) {
 }
 
 siBool siswa_arEntryPoll(siArFile* arFile, siArEntry** outEntry) {
-	siArEntry* entry = (siArEntry*)(arFile->data + arFile->curOffset);
-	if (arFile->curOffset >= arFile->len) {
+	siArEntry* entry = (siArEntry*)&arFile->data[arFile->__curOffset];
+	if (arFile->__curOffset >= arFile->len) {
 		siswa_arOffsetReset(arFile);
 		return SISWA_FALSE;
 	}
 
-	arFile->curOffset += entry->size;
+	arFile->__curOffset += entry->size;
 	*outEntry = entry;
 	return SISWA_TRUE;
 }
 void siswa_arOffsetReset(siArFile* arFile) {
 	SISWA_ASSERT_NOT_NULL(arFile);
-	arFile->curOffset = sizeof(siArHeader);
+	arFile->__curOffset = sizeof(siArHeader);
 }
 siArEntry* siswa_arEntryFind(siArFile arFile, const char* name) {
-	return siswa_arEntryFindEx(arFile, name, strlen(name));
+	return siswa_arEntryFindEx(arFile, name, SISWA_STRLEN(name));
 }
 siArEntry* siswa_arEntryFindEx(siArFile arFile, const char* name, size_t nameLen) {
 	siArEntry* entry;
-	arFile.curOffset = sizeof(siArHeader);
-
 	SISWA_ASSERT_NOT_NULL(name);
 
+	arFile.__curOffset = sizeof(siArHeader);
 	while (siswa_arEntryPoll(&arFile, &entry)) {
 		char* entryName = siswa_arEntryGetName(entry);
 		if (*name == *entryName && strncmp(name + 1, entryName + 1, nameLen - 1) == 0) {
@@ -701,7 +771,7 @@ void* siswa_arEntryGetData(siArEntry* entry) {
 }
 
 siBool siswa_arEntryAdd(siArFile* arFile, const char* name, void* data, uint32_t dataSize) {
-	return siswa_arEntryAddEx(arFile, name, strlen(name), data, dataSize);
+	return siswa_arEntryAddEx(arFile, name, SISWA_STRLEN(name), data, dataSize);
 }
 siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, void* data, uint32_t dataSize) {
 	siArEntry newEntry;
@@ -717,7 +787,7 @@ siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, vo
 
 		while (siswa_arEntryPoll(&tmpArFile, &entry)) {
 			const char* entryName = siswa_arEntryGetName(entry);
-			offset = tmpArFile.curOffset;
+			offset = tmpArFile.__curOffset;
 
 			if (*name == *entryName && strncmp(name + 1, entryName + 1, nameLen - 1) == 0) {
 				return SISWA_FAILURE;
@@ -727,25 +797,28 @@ siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, vo
 	newEntry.size = dataSize + nameLen + 1 + sizeof(siArEntry);
 	newEntry.dataSize = dataSize;
 	newEntry.offset = nameLen + 1 + sizeof(siArEntry);
-	memset(newEntry.filedate, 0, sizeof(uint64_t));
+	SISWA_MEMSET(newEntry.filedate, 0, sizeof(uint64_t));
 
-	SISWA_ASSERT(offset + newEntry.size < arFile->cap, "Not enough space inside the buffer to add a new entry.");
+	SISWA_ASSERT_MSG(
+		offset + newEntry.size < arFile->cap,
+		"Not enough space inside the buffer to add a new entry"
+	);
 	dataPtr = arFile->data + offset;
 
-	memcpy(dataPtr, &newEntry, sizeof(siArEntry));
+	SISWA_MEMCPY(dataPtr, &newEntry, sizeof(siArEntry));
 	dataPtr += sizeof(siArEntry);
 
-	memcpy(dataPtr, name, nameLen);
+	SISWA_MEMCPY(dataPtr, name, nameLen);
 	dataPtr += nameLen;
 	*dataPtr = '\0';
 	dataPtr += 1;
 
-	memcpy(dataPtr, data, dataSize);
+	SISWA_MEMCPY(dataPtr, data, dataSize);
 	arFile->len += newEntry.size;
 	return SISWA_SUCCESS;
 }
 siBool siswa_arEntryRemove(siArFile* arFile, const char* name) {
-	return siswa_arEntryRemoveEx(arFile, name, strlen(name));
+	return siswa_arEntryRemoveEx(arFile, name, SISWA_STRLEN(name));
 }
 siBool siswa_arEntryRemoveEx(siArFile* arFile, const char* name, size_t nameLen) {
 	size_t offset;
@@ -763,12 +836,12 @@ siBool siswa_arEntryRemoveEx(siArFile* arFile, const char* name, size_t nameLen)
 	offset = (size_t)entry - (size_t)arFile->data;
 
 	arFile->len -= entry->size;
-	memcpy(entryPtr, entryPtr + entry->size, arFile->len - offset);
+	SISWA_MEMCPY(entryPtr, entryPtr + entry->size, arFile->len - offset);
 	return SISWA_SUCCESS;
 }
 siBool siswa_arEntryUpdate(siArFile* arFile, const char* name, void* data,
 		uint32_t dataSize) {
-	return siswa_arEntryUpdateEx(arFile, name, strlen(name), data, dataSize);
+	return siswa_arEntryUpdateEx(arFile, name, SISWA_STRLEN(name), data, dataSize);
 }
 siBool siswa_arEntryUpdateEx(siArFile* arFile, const char* name, size_t nameLen,
 		void* data, uint32_t dataSize)  {
@@ -793,17 +866,19 @@ siBool siswa_arEntryUpdateEx(siArFile* arFile, const char* name, size_t nameLen,
 		entry->size = dataSize + nameLen + 1 + sizeof(siArEntry);
 		entry->dataSize = dataSize;
 
-		SISWA_ASSERT(offset + entry->size < arFile->cap,
-				"Not enough space inside the buffer to update the entry.");
+		SISWA_ASSERT_MSG(
+			offset + entry->size < arFile->cap,
+			"Not enough space inside the buffer to update the entry"
+		);
 
 		/* Copy the data _after_ the entry so that it doesn't get overwritten. */
-		memcpy(
+		SISWA_MEMCPY(
 			entryPtr + entry->size,
 			entryPtr + (size_t)oldSize,
 			arFile->len - offset - oldSize
 		);
 		/* Copy the new data into the entry. */
-		memcpy(entryPtr + entry->offset, data, dataSize);
+		SISWA_MEMCPY(entryPtr + entry->offset, data, dataSize);
 
 		arFile->len -= oldSize - (int64_t)entry->size;
 	}
@@ -837,7 +912,7 @@ siArFile siswa_arMergeMul(siArFile* arrayOfArs, size_t arrayLen, void* outBuffer
 		header.entrySizeof = sizeof(siArEntry);
 		header.alignment = SISWA_DEFAULT_HEADER_ALIGNMENT;
 
-		memcpy(buffer, &header, sizeof(header));
+		SISWA_MEMCPY(buffer, &header, sizeof(header));
 		buffer += sizeof(siArHeader);
 	}
 
@@ -854,10 +929,10 @@ siArFile siswa_arMergeMul(siArFile* arrayOfArs, size_t arrayLen, void* outBuffer
 					si_hashtable_set(ht, name);
 				}
 				totalSize += entry->size;
-				SISWA_ASSERT(capacity >= totalSize,
+				SISWA_ASSERT_MSG(capacity >= totalSize,
 					"Not enough space inside the buffer to merge all archive files"
 				);
-				memcpy(buffer, entry, entry->size);
+				SISWA_MEMCPY(buffer, entry, entry->size);
 				buffer += entry->size;
 			}
 		}
@@ -876,23 +951,7 @@ void siswa_arDecompressSegs(siArFile* arl, siByte *out, size_t capacity, siBool 
 	siswa_arlDecompressSegs((siArlFile*)arl, out, capacity, freeCompData);
 }
 uint64_t siswa_arGetDecompressedSize(siArFile ar) {
-	switch (ar.compression) {
-		case SISWA_COMPRESSION_NONE: return ar.len;
-		case SISWA_COMPRESSION_X: {
-			uint64_t length = ((siXCompHeader*)ar.data)->uncompressedSize;
-			if (siswa_isLittleEndian()) {
-				length = siswa_swap64(length);
-			}
-			return length;
-		}
-		case SISWA_COMPRESSION_SEGS: {
-			uint64_t data = ((siSegsHeader*)ar.data)->fullSize;
-			if (siswa_isLittleEndian()) {
-				data = siswa_swap32(data);
-			}
-			return data;
-		}
-	}
+	return siswa_arlGetDecompressedSize(ar);
 }
 
 #ifndef SISWA_NO_STDLIB
@@ -938,67 +997,68 @@ siArlFile siswa_arlMakeBufferEx(void* data, size_t len, size_t capacity) {
 	uint32_t identifier;
 
 	SISWA_ASSERT_NOT_NULL(data);
-	SISWA_ASSERT(len <= capacity, "The length cannot be larger than the total capacity");
+	SISWA_ASSERT_MSG(len <= capacity, "The length cannot be larger than the capacity");
 
-	identifier = *(uint32_t*)data;
+	identifier = siswa_isLittleEndian()
+		? *(uint32_t*)data
+		: siswa_swap32(*(uint32_t*)data);
 
-	if (identifier == SISWA_IDENTIFIER_XCOMPRESSION) {
-		arl.compression = SISWA_COMPRESSION_X;
-	}
-	else {
-		SISWA_ASSERT(identifier == SISWA_IDENTIFIER_ARL2, "File is not a valid ARL2 file!");
-		arl.compression = SISWA_COMPRESSION_NONE;
+	switch (identifier) {
+		case SISWA_IDENTIFIER_ARL2: arl.type = SISWA_FILE_REGULAR; break;
+		case SISWA_IDENTIFIER_XCOMPRESSION: arl.type = SISWA_FILE_XCOMPRESS; break;
+		case SISWA_IDENTIFIER_SEGS: arl.type = SISWA_FILE_SEGS; break;
+		default: arl.type = SISWA_FILE_INVALID;
 	}
 
 	arl.data = (siByte*)data;
 	arl.len = len;
 	arl.cap = capacity;
-	arl.curOffset = sizeof(siArHeader);
+	arl.__curOffset = sizeof(siArHeader);
 
 	return arl;
 }
 
 #ifndef SISWA_NO_STDLIB
-siArlFile siswa_arlCreateArlContent(size_t capacity, size_t archiveCount) {
+siArlFile siswa_arlCreateContent(size_t capacity, size_t archiveCount) {
 	size_t newCap =
 		capacity + (sizeof(siArlHeader) - sizeof(uint32_t)) + archiveCount * sizeof(uint32_t);
 
-	return siswa_arlCreateArlContentEx(
+	return siswa_arlCreateContentEx(
 		malloc(newCap),
 		newCap,
 		archiveCount
 	);
 }
 #endif
-siArlFile siswa_arlCreateArlContentEx(void* buffer, size_t capacity, size_t archiveCount) {
+siArlFile siswa_arlCreateContentEx(void* buffer, size_t capacity, size_t archiveCount) {
 	siArlHeader header;
 	siArlFile arl;
 	size_t length = sizeof(siArlHeader) - sizeof(uint32_t);
 
 	SISWA_ASSERT_NOT_NULL(buffer);
-	SISWA_ASSERT(
+	SISWA_ASSERT_MSG(
 		capacity >= length + archiveCount * sizeof(uint32_t),
-		"Capacity must be at least equal to or be higher than 'i"
-		"(sizeof(siArlHeader) - sizeof(uint32_t)) + arrayLen * sizeof(uint32_t)'."
+		"Capacity must be at least equal to or be higher than "
+		"'(sizeof(siArlHeader) - sizeof(uint32_t)) + arrayLen * sizeof(uint32_t)'"
 	);
-	SISWA_ASSERT(archiveCount != 0, "Array length cannot be zero.");
+	SISWA_ASSERT_MSG(archiveCount != 0, "Array length cannot be zero");
 
 	header.identifier = SISWA_IDENTIFIER_ARL2;
 	header.archiveCount = archiveCount;
-	memcpy(buffer, &header, length);
-	memset((siByte*)buffer + length, 0, archiveCount * sizeof(uint32_t));
+	SISWA_MEMCPY(buffer, &header, length);
+	SISWA_MEMSET((siByte*)buffer + length, 0, archiveCount * sizeof(uint32_t));
 	length += archiveCount * sizeof(uint32_t);
 
 	arl.data = (siByte*)buffer;
 	arl.len = length;
 	arl.cap = capacity;
-	arl.compression = SISWA_COMPRESSION_NONE;
-	arl.curOffset = length;
+	arl.type = SISWA_FILE_REGULAR;
+	arl.__curOffset = length;
 
 	return arl;
 }
 siArlFile siswa_arlCreateFromAr(siArFile arFile, void* outBuffer, size_t capacity) {
-	siArlFile arl = siswa_arlCreateArlContentEx(outBuffer, capacity, 1);
+	siArlFile arl = siswa_arlCreateContentEx(outBuffer, capacity, 1);
 
 	siArEntry* entry;
 	while (siswa_arEntryPoll(&arFile, &entry)) {
@@ -1010,7 +1070,7 @@ siArlFile siswa_arlCreateFromAr(siArFile arFile, void* outBuffer, size_t capacit
 }
 siArlFile siswa_arlCreateFromArMul(siArFile* arrayOfArs, size_t arrayLen,
 		void* outBuffer, size_t capacity)  {
-	siArlFile arl = siswa_arlCreateArlContentEx(outBuffer, capacity, arrayLen);
+	siArlFile arl = siswa_arlCreateContentEx(outBuffer, capacity, arrayLen);
 
 	size_t i;
 	for (i = 0; i < arrayLen; i += 1) {
@@ -1044,33 +1104,37 @@ siBool siswa_arlEntryPoll(siArlFile* arlFile, siArlEntry** outEntry) {
 	siArlEntry* entry;
 	SISWA_ASSERT_NOT_NULL(arlFile);
 	SISWA_ASSERT_NOT_NULL(outEntry);
+	SISWA_ASSERT(arlFile->type == SISWA_FILE_REGULAR);
 
-	entry = (siArlEntry*)(arlFile->data + arlFile->curOffset);
-	if (arlFile->curOffset >= arlFile->len) {
+	entry = (siArlEntry*)&arlFile->data[arlFile->__curOffset];
+	if (arlFile->__curOffset >= arlFile->len) {
 		siswa_arlOffsetReset(arlFile);
 		return SISWA_FALSE;
 	}
 
-	arlFile->curOffset += entry->len + 1;
+	arlFile->__curOffset += entry->len + 1;
 	*outEntry = entry;
 
 	return SISWA_TRUE;
 }
 void siswa_arlOffsetReset(siArlFile* arlFile) {
 	SISWA_ASSERT_NOT_NULL(arlFile);
-	arlFile->curOffset = siswa_arlGetHeaderLength(*arlFile);
+	SISWA_ASSERT(arlFile->type == SISWA_FILE_REGULAR);
+	arlFile->__curOffset = siswa_arlGetHeaderLength(*arlFile);
 }
 siArlEntry* siswa_arlEntryFind(siArlFile arlFile, const char* name) {
-	return siswa_arlEntryFindEx(arlFile, name, strlen(name));
+	return siswa_arlEntryFindEx(arlFile, name, SISWA_STRLEN(name));
 }
 siArlEntry* siswa_arlEntryFindEx(siArlFile arFile, const char* name, size_t nameLen) {
 	siArlEntry* entry;
-	arFile.curOffset = siswa_arlGetHeaderLength(arFile);
+	arFile.__curOffset = siswa_arlGetHeaderLength(arFile);
 
 	SISWA_ASSERT_NOT_NULL(name);
+	SISWA_ASSERT(arFile.type == SISWA_FILE_REGULAR);
 
 	while (siswa_arlEntryPoll(&arFile, &entry)) {
-		if (*name == *entry->string && strncmp(name + 1, entry->string + 1, nameLen - 1) == 0) {
+		if (*name == *entry->string
+			&& SISWA_STRNCMP(&name[1], &entry->string[1], nameLen - 1) == 0) {
 			return entry;
 		}
 	}
@@ -1079,47 +1143,50 @@ siArlEntry* siswa_arlEntryFindEx(siArlFile arFile, const char* name, size_t name
 }
 
 siBool siswa_arlEntryAdd(siArlFile* arlFile, const char* name, size_t archiveIndex) {
-	return siswa_arlEntryAddEx(arlFile, name, strlen(name), archiveIndex);
+	return siswa_arlEntryAddEx(arlFile, name, SISWA_STRLEN(name), archiveIndex);
 }
 siBool siswa_arlEntryAddEx(siArlFile* arlFile, const char* name, uint8_t nameLen,
 		size_t archiveIndex) {
 	siByte* dataPtr;
 	siArlHeader* header = siswa_arlGetHeader(*arlFile);
 	size_t offset = siswa_arlGetHeaderLength(*arlFile);
+	siArlEntry* entry;
+	siArlFile tmpArFile = *arlFile;
 
 	SISWA_ASSERT_NOT_NULL(arlFile);
 	SISWA_ASSERT_NOT_NULL(name);
-	SISWA_ASSERT(
+	SISWA_ASSERT_MSG(
 		archiveIndex < header->archiveCount,
-		"The provided archive index is too high than the linker's archive count."
+		"The provided archive index is too high than the linker's archive count"
 	);
 
-	{
-		siArlEntry* entry;
-		siArlFile tmpArFile = *arlFile;
 
-		while (siswa_arlEntryPoll(&tmpArFile, &entry)) {
-			const char* entryName = entry->string;
-			offset = tmpArFile.curOffset;
+	while (siswa_arlEntryPoll(&tmpArFile, &entry)) {
+		const char* entryName = entry->string;
+		offset = tmpArFile.__curOffset;
 
-			if (*name == *entryName && strncmp(name + 1, entryName + 1, nameLen - 1) == 0) {
-				return SISWA_FAILURE;
-			}
+		if (*name == *entryName
+			&& SISWA_STRNCMP(&name[1], &entryName[1], nameLen - 1) == 0) {
+			return SISWA_FAILURE;
 		}
 	}
-	SISWA_ASSERT(offset + sizeof(uint8_t) + nameLen < arlFile->cap, "Not enough space inside the buffer to add a new entry.");
+
+	SISWA_ASSERT_MSG(
+		offset + sizeof(uint8_t) + nameLen < arlFile->cap,
+		"Not enough space inside the buffer to add a new entry"
+	);
 	dataPtr = arlFile->data + offset;
 	*dataPtr = nameLen;
 	dataPtr += 1;
 
-	memcpy(dataPtr, name, nameLen);
+	SISWA_MEMCPY(dataPtr, name, nameLen);
 	arlFile->len += sizeof(uint8_t) + nameLen;
 	header->archiveSizes[archiveIndex] += sizeof(siArEntry) + nameLen + 1;
 
 	return SISWA_SUCCESS;
 }
 siBool siswa_arlEntryRemove(siArlFile* arlFile, const char* name, size_t archiveIndex) {
-	return siswa_arlEntryRemoveEx(arlFile, name, strlen(name), archiveIndex);
+	return siswa_arlEntryRemoveEx(arlFile, name, SISWA_STRLEN(name), archiveIndex);
 }
 siBool siswa_arlEntryRemoveEx(siArlFile* arlFile, const char* name, uint8_t nameLen,
 		size_t archiveIndex) {
@@ -1129,9 +1196,9 @@ siBool siswa_arlEntryRemoveEx(siArlFile* arlFile, const char* name, uint8_t name
 	siArlHeader* header = siswa_arlGetHeader(*arlFile);
 
 	SISWA_ASSERT_NOT_NULL(name);
-	SISWA_ASSERT(
+	SISWA_ASSERT_MSG(
 		archiveIndex < header->archiveCount,
-		"The provided archive index is too high than the linker's archive count."
+		"The specified archive index higher than the linker's archive count"
 	);
 
 	entry = siswa_arlEntryFindEx(*arlFile, name, nameLen);
@@ -1143,7 +1210,11 @@ siBool siswa_arlEntryRemoveEx(siArlFile* arlFile, const char* name, uint8_t name
 	offset = (size_t)entry - (size_t)arlFile->data;
 
 	arlFile->len -= sizeof(uint8_t) + nameLen;
-	memcpy(entryPtr, entryPtr + (sizeof(uint8_t) + nameLen), arlFile->len - offset);
+	SISWA_MEMCPY(
+		entryPtr,
+		&entryPtr[sizeof(uint8_t) + nameLen],
+		arlFile->len - offset
+	);
 	header->archiveSizes[archiveIndex] -= sizeof(uint8_t) + nameLen;
 
 	return SISWA_SUCCESS;
@@ -1151,18 +1222,23 @@ siBool siswa_arlEntryRemoveEx(siArlFile* arlFile, const char* name, uint8_t name
 
 siBool siswa_arlEntryUpdate(siArlFile* arlFile, const char* name, const char* newName,
 		size_t archiveIndex) {
-	return siswa_arlEntryUpdateEx(arlFile, name, strlen(name), newName, strlen(newName), archiveIndex);
+	return siswa_arlEntryUpdateEx(arlFile, name, SISWA_STRLEN(name), newName, SISWA_STRLEN(newName), archiveIndex);
 }
 siBool siswa_arlEntryUpdateEx(siArlFile* arlFile, const char* oldName, uint8_t oldNameLen,
 		const char* newName, uint8_t newNameLen, size_t archiveIndex) {
 	size_t offset;
 	siArlEntry* entry;
 	siByte* entryPtr;
-	siArlHeader* header = siswa_arlGetHeader(*arlFile);
+	siArlHeader* header;
+	uint32_t oldLen, newLen;
+	int32_t dif;
 
+	SISWA_ASSERT_NOT_NULL(arlFile);
 	SISWA_ASSERT_NOT_NULL(oldName);
 	SISWA_ASSERT_NOT_NULL(newName);
-	SISWA_ASSERT(
+
+	header = siswa_arlGetHeader(*arlFile);
+	SISWA_ASSERT_MSG(
 		archiveIndex < header->archiveCount,
 		"The provided archive index is too high than the linker's archive count."
 	);
@@ -1173,28 +1249,28 @@ siBool siswa_arlEntryUpdateEx(siArlFile* arlFile, const char* oldName, uint8_t o
 	if (entry == NULL) {
 		return SISWA_FAILURE;
 	}
-	offset = (size_t)entry - (size_t)arlFile->data;
 
-	{
-		int64_t oldSize = sizeof(uint8_t) + entry->len;
+	offset = entryPtr - arlFile->data;
+	oldLen = sizeof(uint8_t) + entry->len;
+	newLen = sizeof(uint8_t) + newNameLen;
 
-		entry->len = newNameLen;
+	entry->len = newNameLen;
 
-		SISWA_ASSERT(offset + sizeof(uint8_t) + newNameLen < arlFile->cap,
-				"Not enough space inside the buffer to update the entry.");
+	SISWA_ASSERT_MSG(
+		offset + sizeof(uint8_t) + newNameLen < arlFile->cap,
+		"Not enough space inside the buffer to update the entry"
+	);
 
-		/* Copy the data _after_ the entry so that it doesn't get overwritten. */
-		memcpy(
-			entryPtr + sizeof(uint8_t) + newNameLen,
-			entryPtr + (size_t)oldSize,
-			arlFile->len - offset - oldSize
-		);
-		/* Copy the new name into the entry. */
-		memcpy(entryPtr + 1, newName, newNameLen);
-
-		arlFile->len -= oldSize - (int64_t)(sizeof(uint8_t) + newNameLen);
-		header->archiveSizes[archiveIndex] -= oldSize - (int64_t)(sizeof(uint8_t) + newNameLen);
+	/* Copy the data for the adjusted length. */
+	if (newLen != oldLen) {
+		SISWA_MEMCPY(&entryPtr[newLen], &entryPtr[oldLen], arlFile->len - offset - oldLen);
 	}
+	SISWA_MEMCPY(&entryPtr[sizeof(uint8_t)], newName, newNameLen);
+
+
+	dif = (int32_t)oldLen - (int32_t)newLen;
+	arlFile->len -= dif;
+	header->archiveSizes[archiveIndex] -= dif;
 
 	return SISWA_SUCCESS;
 }
@@ -1204,158 +1280,178 @@ void siswa_arlDecompress(siArlFile* arl, siByte* out, size_t capacity, siBool fr
 	SISWA_ASSERT_NOT_NULL(arl);
 	SISWA_ASSERT_NOT_NULL(out);
 
-	switch (arl->compression) {
-		case SISWA_COMPRESSION_NONE: return ;
-		case SISWA_COMPRESSION_SEGS: {
+	switch (arl->type) {
+		case SISWA_FILE_REGULAR: return ;
+		case SISWA_FILE_SEGS: {
 			siswa_arlDecompressSegs(arl, out, capacity, freeCompData);
 			break;
 		}
-		case SISWA_COMPRESSION_X: {
+		case SISWA_FILE_XCOMPRESS: {
 			siswa_arlDecompressXComp(arl, out, capacity, freeCompData);
 			break;
 		}
+		default: SISWA_PANIC();
 	}
 }
-void siswa_arlDecompressSegs(siArlFile* arl, siByte* out, size_t capacity, siBool freeCompData) {
+void siswa_arlDecompressSegs(siArlFile* arl, siByte* out, size_t capacity,
+		siBool freeCompessedData) {
+	siSegsHeader* header;
+	uint32_t chunks;
+	size_t fullSize;
+
+	siByte* curOutOffset;
+	siByte* curDataOffset;
+	size_t baseOffset;
+	siSegsEntry* entry;
+	siSegsEntry* end;
+	size_t leftCapacity;
+
+
 	SISWA_ASSERT_NOT_NULL(arl);
 	SISWA_ASSERT_NOT_NULL(out);
-	SISWA_ASSERT(arl->compression == SISWA_COMPRESSION_SEGS, "Wrong compression type.");
+	SISWA_ASSERT_MSG(arl->type == SISWA_FILE_SEGS, "Wrong compression type");
 
-	{
-		siSegsHeader* header = (siSegsHeader*)arl->data;
-		uint32_t chunks = header->chunks;
-		size_t fullSize = header->fullSize;
-		if (siswa_isLittleEndian()) {
-			chunks = siswa_swap16(chunks);
-			fullSize = siswa_swap32(fullSize);
-		}
-		SISWA_ASSERT(
-			capacity >= fullSize,
-			"Capacity must be equal to or be higher than 'siswa_<ar/arl>GetDecompressedSize()'."
-		);
-
-		{
-			siByte* curOutOffset = out;
-			size_t baseOffset = sizeof(siSegsHeader) + (chunks * sizeof(siSegsEntry));
-			siByte* curDataOffset =
-				arl->data;
-
-			siSegsEntry* entry = (siSegsEntry*)(header + 1);
-			siSegsEntry* end = entry + chunks;
-			size_t leftCapacity = capacity;
-
-			for (; entry < end; entry += 1) {
-				uint32_t size = entry->size;
-				uint32_t zSize = entry->zSize;
-				uint32_t offset = entry->offset;
-				if (siswa_isLittleEndian()) {
-					size = siswa_swap16(size); /* TODO(EimaMei): swap64? */
-					zSize = siswa_swap16(zSize);
-					offset = siswa_swap32(offset);
-				}
-				offset -= 1;
-
-				if (entry == (siSegsEntry*)(header + 1) && offset == 0) {
-					offset += baseOffset;
-				}
-
-				size += (size == 0) * 0xFFFF;
-				if (size == zSize) {
-					memcpy(curOutOffset, curDataOffset + offset, size);
-				}
-				else {
-					siswa_decompressDeflate(curDataOffset + offset, zSize, curOutOffset, leftCapacity);
-				}
-				curOutOffset += size + 1;
-				leftCapacity -= size;
-			}
-		}
-		arl->len = fullSize;
-		arl->cap = capacity;
-
-		if (freeCompData) {
-			free(arl->data);
-		}
-		arl->data = out;
-		arl->compression = SISWA_COMPRESSION_NONE;
+	header = (siSegsHeader*)arl->data;
+	chunks = header->chunks;
+	fullSize = header->fullSize;
+	if (siswa_isLittleEndian()) {
+		chunks = siswa_swap16(chunks);
+		fullSize = siswa_swap32(fullSize);
 	}
+
+	SISWA_ASSERT_MSG(
+		capacity >= fullSize,
+		"Capacity must be equal to or be higher than 'siswa_<ar/arl>GetDecompressedSize()'"
+	);
+
+	curOutOffset = out;
+	baseOffset = sizeof(siSegsHeader) + (chunks * sizeof(siSegsEntry));
+	curDataOffset = arl->data;
+
+	entry = (siSegsEntry*)(header + 1);
+	end = &entry[chunks];
+	leftCapacity = capacity;
+
+	for (; entry < end; entry += 1) {
+		uint32_t size = entry->size;
+		uint32_t zSize = entry->zSize;
+		uint32_t offset = entry->offset;
+		if (siswa_isLittleEndian()) {
+			size = siswa_swap16(size);
+			zSize = siswa_swap16(zSize);
+			offset = siswa_swap32(offset);
+		}
+		offset -= 1;
+
+		if (entry == (siSegsEntry*)(header + 1) && offset == 0) {
+			offset += baseOffset;
+		}
+
+		size += (size == 0) * 0xFFFF;
+		if (size == zSize) {
+			SISWA_MEMCPY(curOutOffset, curDataOffset + offset, size);
+		}
+		else {
+			siswa_decompressDeflate(curDataOffset + offset, zSize, curOutOffset, leftCapacity);
+		}
+
+		curOutOffset += size + 1;
+		leftCapacity -= size;
+	}
+
+	arl->len = fullSize;
+	arl->cap = capacity;
+
+	if (freeCompessedData) {
+		free(arl->data);
+	}
+
+	arl->data = out;
+	arl->type = SISWA_FILE_REGULAR;
 }
 void siswa_arlDecompressXComp(siArlFile* arl, siByte* out, size_t capacity, siBool freeCompData) {
+	siXCompHeader* header;
+	uint32_t uncompBlockSize;
+	uint32_t compBlockMax;
+	uint64_t fullSize;
+	siByte* curDataOffset;
+
 	SISWA_ASSERT_NOT_NULL(arl);
 	SISWA_ASSERT_NOT_NULL(out);
-	SISWA_ASSERT(arl->compression == SISWA_COMPRESSION_X, "Wrong compression type.");
+	SISWA_ASSERT_MSG(arl->type == SISWA_FILE_XCOMPRESS, "Wrong compression type.");
 
-	{
-		siXCompHeader* header = (siXCompHeader*)arl->data;
-		uint32_t uncompBlockSize = header->uncompressedBlockSize;
-		uint32_t compBlockMax = header->compressedBlockSizeMax;
-		uint64_t fullSize = header->uncompressedSize;
+	header = (siXCompHeader*)arl->data;
+	uncompBlockSize = header->uncompressedBlockSize;
+	compBlockMax = header->compressedBlockSizeMax;
+	fullSize = header->uncompressedSize;
 
-		siByte* curDataOffset = (siByte*)(header + 1);
-		if (siswa_isLittleEndian()) {
-			uncompBlockSize = siswa_swap32(uncompBlockSize);
-			compBlockMax = siswa_swap32(compBlockMax);
-			fullSize = siswa_swap64(fullSize);
-		}
-		while (SISWA_TRUE) {
-			uint32_t compressedBlockSize;
-			uint32_t unknown;
-			uint32_t uncompressedBlockSize;
-
-			compressedBlockSize = *(uint32_t*)curDataOffset;
-			curDataOffset += sizeof(uint32_t);
-
-			unknown = *(uint8_t*)curDataOffset;
-			curDataOffset += sizeof(uint8_t);
-
-			if (unknown == 0) {
-				break;
-			}
-
-			uncompressedBlockSize = *(uint16_t*)curDataOffset;
-			curDataOffset += 20;
-
-
-			if (siswa_isLittleEndian()) {
-				compressedBlockSize = siswa_swap32(compressedBlockSize);
-				uncompressedBlockSize = siswa_swap16(uncompressedBlockSize);
-			}
-			SISWA_ASSERT(uncompressedBlockSize == uncompressedBlockSize, "Cannot decompress this XCompressed file.");
-
-			if (uncompressedBlockSize == uncompBlockSize) {
-				memcpy(out, curDataOffset, uncompressedBlockSize);
-			}
-
-			curDataOffset += compressedBlockSize;
-		}
-		arl->len = fullSize;
-		arl->cap = capacity;
-
-		if (freeCompData) {
-			free(arl->data);
-		}
-		arl->data = out;
-		arl->compression = SISWA_COMPRESSION_NONE;
+	if (siswa_isLittleEndian()) {
+		uncompBlockSize = siswa_swap32(uncompBlockSize);
+		compBlockMax = siswa_swap32(compBlockMax);
+		fullSize = siswa_swap64(fullSize);
 	}
+	curDataOffset = (siByte*)(header + 1);
+
+	while (SISWA_TRUE) {
+		uint32_t compressedBlockSize;
+		uint32_t unknown;
+		uint32_t uncompressedBlockSize;
+
+		compressedBlockSize = *(uint32_t*)curDataOffset;
+		curDataOffset += sizeof(uint32_t);
+
+		unknown = *(uint8_t*)curDataOffset;
+		curDataOffset += sizeof(uint8_t);
+
+		if (unknown == 0) {
+			break;
+		}
+
+		uncompressedBlockSize = *(uint16_t*)curDataOffset;
+		curDataOffset += 20;
+
+
+		if (siswa_isLittleEndian()) {
+			compressedBlockSize = siswa_swap32(compressedBlockSize);
+			uncompressedBlockSize = siswa_swap16(uncompressedBlockSize);
+		}
+		SISWA_ASSERT_MSG(uncompressedBlockSize == uncompressedBlockSize, "Cannot decompress this XCompressed file.");
+
+		if (uncompressedBlockSize == uncompBlockSize) {
+			SISWA_MEMCPY(out, curDataOffset, uncompressedBlockSize);
+		}
+
+		curDataOffset += compressedBlockSize;
+	}
+
+	arl->len = fullSize;
+	arl->cap = capacity;
+
+	if (freeCompData) {
+		free(arl->data);
+	}
+	arl->data = out;
+	arl->type = SISWA_FILE_REGULAR;
 }
 
 uint64_t siswa_arlGetDecompressedSize(siArlFile arl) {
-	switch (arl.compression) {
-		case SISWA_COMPRESSION_NONE: return arl.len;
-		case SISWA_COMPRESSION_X: {
+	switch (arl.type) {
+		case SISWA_FILE_REGULAR: return arl.len;
+		case SISWA_FILE_XCOMPRESS: {
 			uint64_t length = ((siXCompHeader*)arl.data)->uncompressedSize;
 			if (siswa_isLittleEndian()) {
 				length = siswa_swap64(length);
 			}
 			return length;
 		}
-		case SISWA_COMPRESSION_SEGS: {
+		case SISWA_FILE_SEGS: {
 			uint32_t data = ((siSegsHeader*)arl.data)->fullSize;
 			if (siswa_isLittleEndian()) {
 				data = siswa_swap32(data);
 			}
 			return data;
 		}
+		default: SISWA_PANIC();
 	}
 }
 
@@ -1445,13 +1541,13 @@ void sinfl_refill(sinfl* s) {
 }
 static
 size_t sinfl_peek(sinfl* s, int32_t cnt) {
-	assert(cnt >= 0 && cnt <= 56);
-	assert(cnt <= s->bitcnt);
+	SISWA_ASSERT(cnt >= 0 && cnt <= 56);
+	SISWA_ASSERT(cnt <= s->bitcnt);
 	return s->bitbuf & (((uint64_t)1 << cnt) - 1);
 }
 static
 void sinfl_eat(sinfl* s, int32_t cnt) {
-	assert(cnt <= s->bitcnt);
+	SISWA_ASSERT(cnt <= s->bitcnt);
 	s->bitbuf >>= cnt;
 	s->bitcnt -= cnt;
 }
@@ -1488,7 +1584,7 @@ int32_t sinfl_build_tbl(sinfl_gen* gen, uint32_t* tbl, uint32_t tbl_bits,
 			tbl[gen->word] = (*gen->sorted++ << 16) | gen->len;
 			if (gen->word == tbl_end - 1) {
 				while (gen->len < tbl_bits) {
-					memcpy(&tbl[tbl_end], tbl, (size_t)tbl_end * sizeof(tbl[0]));
+					SISWA_MEMCPY(&tbl[tbl_end], tbl, (size_t)tbl_end * sizeof(tbl[0]));
 					tbl_end <<= 1;
 					gen->len += 1;
 				}
@@ -1500,7 +1596,7 @@ int32_t sinfl_build_tbl(sinfl_gen* gen, uint32_t* tbl, uint32_t tbl_bits,
 		} while (--gen->cnt);
 		do {
 			if (++gen->len <= tbl_bits) {
-				memcpy(&tbl[tbl_end], tbl, (size_t)tbl_end * sizeof(tbl[0]));
+				SISWA_MEMCPY(&tbl[tbl_end], tbl, (size_t)tbl_end * sizeof(tbl[0]));
 				tbl_end <<= 1;
 			}
 		} while (!(gen->cnt = cnt[gen->len]));
@@ -1580,7 +1676,7 @@ void sinfl_build(uint32_t* tbl, siByte* lens, uint32_t tbl_bits, size_t maxlen,
 	used = (used << 1) + cnt[i];
 
 	for (i = 0; i < symcnt; i += 1) {
-		gen.sorted[off[lens[i]]++] = (int16_t)i;
+		gen.sorted[off[lens[i]]++] = (uint16_t)i;
 	}
 	gen.sorted += off[0];
 
@@ -1679,7 +1775,7 @@ size_t siswa_decompressDeflate(siByte* data, size_t length, siByte* out, size_t 
 					return (out - offset);
 				}
 
-				memcpy(out, s.bitptr, len);
+				SISWA_MEMCPY(out, s.bitptr, len);
 				s.bitptr += len;
 				out += len;
 
@@ -1747,7 +1843,7 @@ size_t siswa_decompressDeflate(siByte* data, size_t length, siByte* out, size_t 
 								}
 								break;
 							}
-							case 18: { /* TODO(EimaMei): test if just doing memset is faster. */
+							case 18: {
 								i = 11 + sinfl_get(&s, 7);
 								while (i) {
 									lens[n] = 0;
@@ -1893,7 +1989,11 @@ size_t siswa_decompressDeflate(siByte* data, size_t length, siByte* out, size_t 
 }
 #endif
 
-#endif
+#undef siswa_swap16
+#undef siswa_swap32
+#undef siswa_swap64
+
+#endif /* SISWA_ARCHIVE_IMPLEMENTATION */
 
 #ifdef __cplusplus
 }
