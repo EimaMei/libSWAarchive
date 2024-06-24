@@ -1,10 +1,9 @@
 # Folders
 build/**
-res/
-src/
+res/**
 include/
 lib/
-src/
+src
 output/
 
 
@@ -22,3 +21,4 @@ Dockerfile
 *.mp3
 *.png
 Makefile
+*.ar.*

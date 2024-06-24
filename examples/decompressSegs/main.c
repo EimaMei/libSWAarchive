@@ -7,7 +7,7 @@ int main(void) {
 	uint64_t size;
 
 	/* Open the .ar file and check for the compression type. */
-	ar = siswa_arMake("res/BossPetra.ar.00");
+	ar = siswa_arMake("examples/decompressSegs/BossPetra.ar.00");
 	size = siswa_arGetDecompressedSize(ar);
 	printf("Compression info: 'type' - %i, 'size' - %lu bytes\n", ar.type, size);
 

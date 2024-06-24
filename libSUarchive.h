@@ -123,7 +123,7 @@ extern "C" {
 			if ((condition) == 0) { \
 				fprintf( \
 					stderr, \
-					"Assertion \"" #condition "\" at \"" __FILE__ ":%d\": " #msg ".", \
+					"Assertion \"" #condition "\" at \"" __FILE__ ":%d\": " #msg ".\n", \
 					__LINE__ \
 				); \
 				abort(); \
@@ -274,6 +274,12 @@ typedef struct { /* NOTE(EimaMei): All credit goes to https://github.com/mistyde
 } siXCompHeader;
 SISWA_STATIC_ASSERT(sizeof(siXCompHeader) == 48);
 
+typedef struct {
+	uint32_t compressedSize;
+} siXCompEntry;
+SISWA_STATIC_ASSERT(sizeof(siXCompEntry) == 4);
+
+
 
 typedef struct {
 	/* Always 0. */
@@ -302,10 +308,11 @@ SISWA_STATIC_ASSERT(sizeof(siArEntry) == 20);
 
 
 typedef struct {
-	/* Pointer to the contents of the data. If `siswa_<ar/arl>Make' or 'siswa_<ar/arl>CreateContent'
-	 * was used, the data is malloced and must be freed. */
+	/* Pointer to the contents of the data.
+	 * NOTE: If `siswa_<ar/arl>Make' or 'siswa_<ar/arl>CreateContent' was used
+	 * to create this structure, the data was malloced and must be freed after use. */
 	siByte* data;
-	/* Current length of the content. Changes between entry modifications. */
+	/* Current length of the content. Changes after each entry modification. */
 	size_t len;
 	/* Total memory capacity of '.data'. */
 	size_t cap;
@@ -318,18 +325,26 @@ typedef struct {
 } siArFile;
 
 
-/* Creates a 'siArFile' structure from an '.ar' file. */
+/* Creates and returns a 'siArFile' structure from the specified file, while also
+ * allocating the contents of it into the heap.
+ * NOTE: The returned structure's '.data' member must be freed after use. */
 siArFile siswa_arMake(const char* path);
-/* Creates a 'siArFile' structure from an '.ar' file and adds additional space to the capacity. */
+/* Creates and returns a 'siArFile' structure from the specified file, while also
+ * allocating the contents of it plus the additionally specified more into the heap.
+ * NOTE: The returned structure's '.data' member must be freed after use. */
 siArFile siswa_arMakeEx(const char* path, size_t additionalAllocSpace);
-/* Creates a 'siArFile' structure from an archive file's content in memory. */
-siArFile siswa_arMakeBuffer(void* data, size_t len);
-/* Creates a 'siArFile' structure from an archive file's content in memory, while also setting the capacity. */
-siArFile siswa_arMakeBufferEx(void* data, size_t len, size_t capacity);
+/* Creates and returns a 'siArFile' structure from the specified buffer and its
+ * length. */
+siArFile siswa_arMakeBuffer(const void* data, size_t len);
+/* Creates and returns a 'siArFile' structure from the specified buffer, its
+ * length and full capacity. */
+siArFile siswa_arMakeBufferEx(const void* data, size_t len, size_t capacity);
 
-/* Creates a 'siArFile' structure and allocates an archive file in memory from the provided capacity. */
+/* Allocates 'sizeof(siArHeader) + capacity' amount of memory into the heap and
+ * writes an autocompleted archive header into it.
+ * NOTE: The returned structure's '.data' member must be freed after use. */
 siArFile siswa_arCreateContent(size_t capacity);
-/* Creates a 'siArFile' structure and creates an archive file in memory from the provided buffer and capacity. */
+/* Writes an autocompleted archive header into the specified buffer. */
 siArFile siswa_arCreateContentEx(void* buffer, size_t capacity);
 
 /* Gets the header of the archive file. */
@@ -337,47 +352,50 @@ siArHeader* siswa_arGetHeader(siArFile arFile);
 /* Gets the total entry count of the archive file. */
 size_t siswa_arGetEntryCount(siArFile arFile);
 
-/* Polls for the next entry in the archive, as the data gets written to 'outEntry'
- * Returns 'SISWA_TRUE' if an entry was polled, 'SISWA_FALSE' if there are no more
- * entries in the ar file. */
+/* Polls for the next entry in the archive, as the pointer to the data gets written
+ * to 'outEntry' Returns 'SISWA_TRUE' if an entry was polled, 'SISWA_FALSE' if
+ * there are no more  entries in the ar file. */
 siBool siswa_arEntryPoll(siArFile* arFile, siArEntry** outEntry);
 /* Resets the entry offset back to the start. */
 void siswa_arOffsetReset(siArFile* arFile);
 /* Finds an entry matching the provided name. Returns NULL if the entry doesn't exist. */
 siArEntry* siswa_arEntryFind(siArFile arFile, const char* name);
-/* Finds an entry matching the provided name with length. Returns NULL if the entry doesn't exist. */
+/* Finds an entry matching the provided name with length. Returns NULL if the entry
+ * doesn't exist. */
 siArEntry* siswa_arEntryFindEx(siArFile arFile, const char* name, size_t nameLen);
 
 /* Gets the name of the provided entry. */
-char* siswa_arEntryGetName(siArEntry* entry);
+char* siswa_arEntryGetName(const siArEntry* entry);
 /* Gets the data of the provided entry. */
-void* siswa_arEntryGetData(siArEntry* entry);
+void* siswa_arEntryGetData(const siArEntry* entry);
 
-/* Adds a new entry in the archive. Fails if the entry name already exists or the capacity is too low. */
-siBool siswa_arEntryAdd(siArFile* arFile, const char* name, void* data,
+/* Adds a new entry in the archive. Fails if the entry name already exists or
+ * the capacity is too low. */
+siBool siswa_arEntryAdd(siArFile* arFile, const char* name, const void* data,
 		uint32_t dataSize);
-/* Adds a new entry in the archive. Fails if the entry name already exists or the capacity is too low. */
+/* Adds a new entry in the archive. Fails if the entry name already exists or
+ * the capacity is too low. */
 siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen,
-		void* data, uint32_t dataSize);
+		const void* data, uint32_t dataSize);
 /* Removes an entry in the archive. Fails if the entry doesn't exist. */
 siBool siswa_arEntryRemove(siArFile* arFile, const char* name);
 /* Removes an entry in the archive. Fails if the entry doesn't exist. */
 siBool siswa_arEntryRemoveEx(siArFile* arFile, const char* name, size_t nameLen);
 /* Updates the entry inside the archive. Fails if the entry doesn't exist. */
-siBool siswa_arEntryUpdate(siArFile* arFile, const char* name, void* data,
+siBool siswa_arEntryUpdate(siArFile* arFile, const char* name, const void* data,
 		uint32_t dataSize);
 /* Updates the entry inside the archive. Fails if the entry doesn't exist. */
 siBool siswa_arEntryUpdateEx(siArFile* arFile, const char* name, size_t nameLen,
-		void* data, uint32_t dataSize);
+		const void* data, uint32_t dataSize);
 
 /* Creates a new archive by merging two archives into it, with the content being
  * written to 'outBuffer'. Any duplicating entries from the archives get ignored.
  * Fails if the capacity is too low to fit the two archive files in 'outBuffer'. */
-siArFile siswa_arMerge(siArFile ars[2], void* outBuffer, size_t capacity);
+siArFile siswa_arMerge(const siArFile ars[2], void* outBuffer, size_t capacity);
 /* Creates a new archive by merging all of the archive files into it, with the content
  * being written to 'outBuffer'. Any duplicating entries from the archives get ignored.
  * Fails if the capacity is too low to fit all of the archive files in 'outBuffer'. */
-siArFile siswa_arMergeMul(siArFile* arrayOfArs, size_t arrayLen, void* outBuffer,
+siArFile siswa_arMergeMul(const siArFile* arrayOfArs, size_t arrayLen, void* outBuffer,
 		size_t capacity);
 
 #ifndef SISWA_NO_DECOMPRESSION
@@ -385,12 +403,17 @@ siArFile siswa_arMergeMul(siArFile* arrayOfArs, size_t arrayLen, void* outBuffer
  * writes the decompressed data into 'out'. This also sets 'arl.data' to 'out'.
  * Setting 'freeCompData' to true will do 'free(arl.data)', freeing the compressed
  * data from memory. */
-void siswa_arDecompress(siArFile* arl, siByte* out, size_t capacity, siBool freeCompData);
+void siswa_arDecompress(siArFile* ar, siByte* out, size_t capacity, siBool freeCompData);
 /* Decompresses the given archive linker file using SEGS decompression and writes
  * the decompressed data into 'out'. This also sets 'arl.data' to 'out'. Setting
  * 'freeCompData' to true will do 'free(arl.data)', freeing the compressed
  * data from memory. */
-void siswa_arDecompressSegs(siArFile* arl, siByte *out, size_t capacity, siBool freeCompData);
+void siswa_arDecompressSegs(siArFile* ar, siByte* out, size_t capacity, siBool freeCompData);
+/*  Decompresses the given archive file using XCompression (LZX) decompression
+ * and writes the decompressed data into 'out'. This also sets 'arl.data' to 'out'.
+ * Setting 'freeCompData' to true will do 'free(arl.data)', freeing the compressed
+ * data from memory. */
+void siswa_arDecompressXComp(siArFile* ar, siByte* out, size_t capacity, siBool freeCompData);
 /* Gets the exact, raw decompressed size of the data if it's X or SEGS compressed. */
 uint64_t siswa_arGetDecompressedSize(siArFile ar);
 #endif
@@ -484,20 +507,6 @@ siBool siswa_arlEntryUpdate(siArlFile* arlFile, const char* name, const char* ne
 siBool siswa_arlEntryUpdateEx(siArlFile* arlFile, const char* name, uint8_t nameLen,
 		const char* newName, uint8_t newNameLen, size_t archiveIndex);
 
-#if 0 /* TODO */
-/* Creates a new archive linker by merging two linkers into it, with the content
- * being written to 'outBuffer'. Any duplicating entries from the archive linkers
- * get ignored. Fails if the capacity is too low to fit the two archive files in
- * 'outBuffer'. */
-siArlFile siswa_arlMerge(siArlFile arls[2], void* outBuffer, size_t capacity);
-/* Creates a new archive linker by merging all of the linkers files into it, with
- * the content being written to 'outBuffer'. Any duplicating entries from the
- * archive linkers get ignored Fails if the capacity is too low to fit all of
- * the archive linkers in 'outBuffer'. */
-siArlFile siswa_arlMergeMul(siArlFile* arrayOfArls, size_t arrayLen, void* outBuffer,
-		size_t capacity);
-#endif
-
 #ifndef SISWA_NO_DECOMPRESSION
 /* Decompresses the given archive linker file depending on the contents of the data
  * and writes the decompressed data into 'out'. This also sets 'arl.data' to 'out'.
@@ -527,9 +536,10 @@ void siswa_arlFree(siArlFile arlFile);
 /* Decompresses the given buffer using Deflate decompression and writes it into
  * 'out'. Returns the length of the decompressed data. */
 size_t siswa_decompressDeflate(siByte* data, size_t length, siByte* out, size_t capacity);
-/* (TODO) Decompresses the given buffer using XCompression (LZX) decompression and
- * writes it into 'out'. Returns the length of the decompressed data. */
-/* siswa_decompressXComp(siByte* data, size_t length, siByte* out, size_t capacity) */
+/* Decompresses the given buffer using LZX DELTA (1.03) decompression and writes
+ * it into 'out'. Returns the length of the decompressed data. */
+size_t siswa_decompressLZXDelta(siByte* data, size_t length, siByte* out, size_t capacity);
+
 #endif
 
 
@@ -551,7 +561,7 @@ size_t siswa_decompressDeflate(siByte* data, size_t length, siByte* out, size_t 
    | (((x) & (uint64_t)0x00000000000000FF) << 56))
 
 
-#if 1 /* NOTE(EimaMei): Internal hashing and function stuff, can ignore */
+#if 1
 
 static
 siBool siswa_isLittleEndian(void) {
@@ -568,7 +578,7 @@ typedef struct {
 #define SI_FNV_PRIME 1099511628211UL
 
 static
-uint64_t si_hash_key(const char* key) {
+uint64_t siswa__hashKey(const char* key) {
 	uint64_t hash = SI_FNV_OFFSET;
 	const char* p;
 	for (p = key; *p; p++) {
@@ -578,28 +588,32 @@ uint64_t si_hash_key(const char* key) {
 	return hash;
 }
 
-siHashTable* si_hashtable_make_reserve(void* mem, size_t capacity) {
+static
+siHashTable* siswa__hashtableMakeReserve(void* mem, size_t capacity) {
 	siHashTable* table = (siHashTable*)mem;
 	table->capacity = capacity;
 	table->entries = (char**)(table + 1);
-	SISWA_MEMSET(table->entries, 0, capacity * sizeof(char*)); /* TODO(EimaMei): Do we need this? */
+	SISWA_MEMSET(table->entries, 0, capacity * sizeof(char*));
 
 	return table;
 }
 
-uint32_t si_hashtable_exists(siHashTable* ht, const char* key) {
-	uint64_t hash = si_hash_key(key);
+static
+uint32_t siswa__hashtableExists(siHashTable* ht, const char* key) {
+	uint64_t hash = siswa__hashKey(key);
 	size_t index = (size_t)(hash & (uint64_t)(ht->capacity - 1));
 
-	char** entry = ht->entries + index;
-	char** old_entry = ht->entries + index;
-	char** end = ht->entries + ht->capacity;
+	char** entry = &ht->entries[index];
+	char** oldEntry = entry;
+	char** end = &ht->entries[ht->capacity];
 	do {
 		if (*entry == NULL) {
 			goto increment_entry;
 		}
 
-		if (*key == **entry && strcmp(key + 1, *entry + 1) == 0) {
+		if (
+			*key == **entry
+			&& strcmp(key + 1, *entry + 1) == 0) {
 			return SISWA_SUCCESS;
 		}
 
@@ -608,13 +622,14 @@ increment_entry:
 		if (entry == end) {
 			entry = ht->entries;
 		}
-	} while (entry != old_entry);
+	} while (entry != oldEntry);
 
 	return SISWA_FAILURE;
 }
 
-char** si_hashtable_set(siHashTable* ht, const char* allocatedStr) {
-	uint64_t hash = si_hash_key(allocatedStr);
+static
+char** siswa__hashtableSet(siHashTable* ht, const char* allocatedStr) {
+	uint64_t hash = siswa__hashKey(allocatedStr);
 	size_t index = (size_t)(hash & (uint64_t)(ht->capacity - 1));
 
 	char** entry = ht->entries + index;
@@ -628,9 +643,14 @@ char** si_hashtable_set(siHashTable* ht, const char* allocatedStr) {
 	}
 	*entry = (char*)allocatedStr;
 
-	return ht->entries + index;
+	return &ht->entries[index];
 }
+#undef SI_FNV_OFFSET
+#undef SI_FNV_PRIME
+
 #endif
+
+
 siArFile siswa_arMake(const char* path) {
 	return siswa_arMakeEx(path, 0);
 }
@@ -659,10 +679,10 @@ siArFile siswa_arMakeEx(const char* path, size_t additionalAllocSpace) {
 	return ar;
 }
 #endif
-siArFile siswa_arMakeBuffer(void* data, size_t len) {
+siArFile siswa_arMakeBuffer(const void* data, size_t len) {
 	return siswa_arMakeBufferEx(data, len, len);
 }
-siArFile siswa_arMakeBufferEx(void* data, size_t len, size_t capacity) {
+siArFile siswa_arMakeBufferEx(const void* data, size_t len, size_t capacity) {
 	siArFile ar;
 	uint32_t identifier;
 
@@ -674,7 +694,7 @@ siArFile siswa_arMakeBufferEx(void* data, size_t len, size_t capacity) {
 		: siswa_swap32(*(uint32_t*)data);
 
 	switch (identifier) {
-		case SISWA_IDENTIFIER_ARL2: ar.type = SISWA_FILE_REGULAR; break;
+		case SISWA_IDENTIFIER_ARL2: SISWA_PANIC(); break;
 		case SISWA_IDENTIFIER_XCOMPRESSION: ar.type = SISWA_FILE_XCOMPRESS; break;
 		case SISWA_IDENTIFIER_SEGS: ar.type = SISWA_FILE_SEGS; break;
 		default: ar.type = SISWA_FILE_INVALID;
@@ -755,7 +775,7 @@ siArEntry* siswa_arEntryFindEx(siArFile arFile, const char* name, size_t nameLen
 	arFile.__curOffset = sizeof(siArHeader);
 	while (siswa_arEntryPoll(&arFile, &entry)) {
 		char* entryName = siswa_arEntryGetName(entry);
-		if (*name == *entryName && strncmp(name + 1, entryName + 1, nameLen - 1) == 0) {
+		if (*name == *entryName && SISWA_STRNCMP(name + 1, entryName + 1, nameLen - 1) == 0) {
 			return entry;
 		}
 	}
@@ -763,21 +783,24 @@ siArEntry* siswa_arEntryFindEx(siArFile arFile, const char* name, size_t nameLen
 	return NULL;
 }
 
-char* siswa_arEntryGetName(siArEntry* entry) {
+char* siswa_arEntryGetName(const siArEntry* entry) {
 	return (char*)entry + sizeof(siArEntry);
 }
-void* siswa_arEntryGetData(siArEntry* entry) {
+void* siswa_arEntryGetData(const siArEntry* entry) {
 	return (siByte*)entry + entry->offset;
 }
 
-siBool siswa_arEntryAdd(siArFile* arFile, const char* name, void* data, uint32_t dataSize) {
+siBool siswa_arEntryAdd(siArFile* arFile, const char* name, const void* data,
+		uint32_t dataSize) {
 	return siswa_arEntryAddEx(arFile, name, SISWA_STRLEN(name), data, dataSize);
 }
-siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, void* data, uint32_t dataSize) {
+siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen,
+		const void* data, uint32_t dataSize) {
 	siArEntry newEntry;
 	siByte* dataPtr;
 	size_t offset = sizeof(siArHeader);
 
+	SISWA_ASSERT_NOT_NULL(arFile);
 	SISWA_ASSERT_NOT_NULL(name);
 	SISWA_ASSERT_NOT_NULL(data);
 
@@ -789,7 +812,8 @@ siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, vo
 			const char* entryName = siswa_arEntryGetName(entry);
 			offset = tmpArFile.__curOffset;
 
-			if (*name == *entryName && strncmp(name + 1, entryName + 1, nameLen - 1) == 0) {
+			if (*name == *entryName
+				&& SISWA_STRNCMP(&name[1], &entryName[1], nameLen - 1) == 0) {
 				return SISWA_FAILURE;
 			}
 		}
@@ -815,6 +839,7 @@ siBool siswa_arEntryAddEx(siArFile* arFile, const char* name, size_t nameLen, vo
 
 	SISWA_MEMCPY(dataPtr, data, dataSize);
 	arFile->len += newEntry.size;
+
 	return SISWA_SUCCESS;
 }
 siBool siswa_arEntryRemove(siArFile* arFile, const char* name) {
@@ -837,14 +862,15 @@ siBool siswa_arEntryRemoveEx(siArFile* arFile, const char* name, size_t nameLen)
 
 	arFile->len -= entry->size;
 	SISWA_MEMCPY(entryPtr, entryPtr + entry->size, arFile->len - offset);
+
 	return SISWA_SUCCESS;
 }
-siBool siswa_arEntryUpdate(siArFile* arFile, const char* name, void* data,
+siBool siswa_arEntryUpdate(siArFile* arFile, const char* name, const void* data,
 		uint32_t dataSize) {
 	return siswa_arEntryUpdateEx(arFile, name, SISWA_STRLEN(name), data, dataSize);
 }
 siBool siswa_arEntryUpdateEx(siArFile* arFile, const char* name, size_t nameLen,
-		void* data, uint32_t dataSize)  {
+		const void* data, uint32_t dataSize)  {
 	size_t offset;
 	siArEntry* entry;
 	siByte* entryPtr;
@@ -887,46 +913,46 @@ siBool siswa_arEntryUpdateEx(siArFile* arFile, const char* name, size_t nameLen,
 	return SISWA_SUCCESS;
 }
 
-siArFile siswa_arMerge(siArFile ars[2], void* outBuffer, size_t capacity) {
+siArFile siswa_arMerge(const siArFile ars[2], void* outBuffer, size_t capacity) {
 	return siswa_arMergeMul(ars, 2, outBuffer, capacity);
 }
-siArFile siswa_arMergeMul(siArFile* arrayOfArs, size_t arrayLen, void* outBuffer,
+siArFile siswa_arMergeMul(const siArFile* arrayOfArs, size_t arrayLen, void* outBuffer,
 		size_t capacity) {
-	char allocator[SISWA_DEFAULT_STACK_SIZE];
-
 	siByte* ogBuffer = (siByte*)outBuffer;
 	siByte* buffer = ogBuffer;
+	siArHeader* header;
+
 	size_t i;
 	siHashTable* ht;
 	size_t totalSize = sizeof(siArHeader);
 
+	siArEntry* entry;
+	uint32_t res;
+	siArFile curAr;
+	char allocator[SISWA_DEFAULT_STACK_SIZE];
+
+
 	SISWA_ASSERT_NOT_NULL(arrayOfArs);
 	SISWA_ASSERT_NOT_NULL(outBuffer);
 
-	ht = si_hashtable_make_reserve(allocator, SISWA_DEFAULT_STACK_SIZE / sizeof(char*) - sizeof(siHashTable));
+	ht = siswa__hashtableMakeReserve(allocator, SISWA_DEFAULT_STACK_SIZE / sizeof(char*) - sizeof(siHashTable));
 
-	{
-		siArHeader header;
-		header.unknown = 0;
-		header.headerSizeof = sizeof(siArHeader);
-		header.entrySizeof = sizeof(siArEntry);
-		header.alignment = SISWA_DEFAULT_HEADER_ALIGNMENT;
-
-		SISWA_MEMCPY(buffer, &header, sizeof(header));
-		buffer += sizeof(siArHeader);
-	}
+	header = (siArHeader*)buffer;
+	header->unknown = 0;
+	header->headerSizeof = sizeof(siArHeader);
+	header->entrySizeof = sizeof(siArEntry);
+	header->alignment = SISWA_DEFAULT_HEADER_ALIGNMENT;
+	buffer += sizeof(siArHeader);
 
 	for (i = 0; i < arrayLen; i++) {
-		siArEntry* entry;
-		uint32_t res;
-		siArFile curAr = arrayOfArs[i];
+		curAr = arrayOfArs[i];
 		while (siswa_arEntryPoll(&curAr, &entry)) {
 			char* name = siswa_arEntryGetName(entry);
-			res = si_hashtable_exists(ht, name);
+			res = siswa__hashtableExists(ht, name);
 
 			if (res == SISWA_FAILURE) {
 				if (i != arrayLen - 1) {
-					si_hashtable_set(ht, name);
+					siswa__hashtableSet(ht, name);
 				}
 				totalSize += entry->size;
 				SISWA_ASSERT_MSG(capacity >= totalSize,
@@ -944,12 +970,16 @@ siArFile siswa_arMergeMul(siArFile* arrayOfArs, size_t arrayLen, void* outBuffer
 	}
 }
 
-void siswa_arDecompress(siArFile* arl, siByte* out, size_t capacity, siBool freeCompData) {
-	siswa_arlDecompress((siArlFile*)arl, out, capacity, freeCompData);
+void siswa_arDecompress(siArFile* ar, siByte* out, size_t capacity, siBool freeCompData) {
+	siswa_arlDecompress((siArlFile*)ar, out, capacity, freeCompData);
 }
-void siswa_arDecompressSegs(siArFile* arl, siByte *out, size_t capacity, siBool freeCompData) {
-	siswa_arlDecompressSegs((siArlFile*)arl, out, capacity, freeCompData);
+void siswa_arDecompressSegs(siArFile* ar, siByte *out, size_t capacity, siBool freeCompData) {
+	siswa_arlDecompressSegs((siArlFile*)ar, out, capacity, freeCompData);
 }
+void siswa_arDecompressXComp(siArFile* ar, siByte *out, size_t capacity, siBool freeCompData) {
+	siswa_arlDecompressXComp((siArlFile*)ar, out, capacity, freeCompData);
+}
+
 uint64_t siswa_arGetDecompressedSize(siArFile ar) {
 	return siswa_arlGetDecompressedSize(ar);
 }
@@ -1349,10 +1379,10 @@ void siswa_arlDecompressSegs(siArlFile* arl, siByte* out, size_t capacity,
 
 		size += (size == 0) * 0xFFFF;
 		if (size == zSize) {
-			SISWA_MEMCPY(curOutOffset, curDataOffset + offset, size);
+			SISWA_MEMCPY(curOutOffset, &curDataOffset[offset], size);
 		}
 		else {
-			siswa_decompressDeflate(curDataOffset + offset, zSize, curOutOffset, leftCapacity);
+			siswa_decompressDeflate(&curDataOffset[offset], zSize, curOutOffset, leftCapacity);
 		}
 
 		curOutOffset += size + 1;
@@ -1374,7 +1404,16 @@ void siswa_arlDecompressXComp(siArlFile* arl, siByte* out, size_t capacity, siBo
 	uint32_t uncompBlockSize;
 	uint32_t compBlockMax;
 	uint64_t fullSize;
+
+#if 0
 	siByte* curDataOffset;
+	siByte* curOutOffset;
+	size_t baseOffset;
+	siSegsEntry* entry;
+	siSegsEntry* end;
+	size_t leftCapacity;
+#endif
+
 
 	SISWA_ASSERT_NOT_NULL(arl);
 	SISWA_ASSERT_NOT_NULL(out);
@@ -1390,16 +1429,19 @@ void siswa_arlDecompressXComp(siArlFile* arl, siByte* out, size_t capacity, siBo
 		compBlockMax = siswa_swap32(compBlockMax);
 		fullSize = siswa_swap64(fullSize);
 	}
-	curDataOffset = (siByte*)(header + 1);
+
+	SISWA_ASSERT_MSG(
+		capacity >= fullSize,
+		"Capacity must be equal to or be higher than 'siswa_<ar/arl>GetDecompressedSize()'"
+	);
+#if 0
+	curDataOffset = arl->data;
+#endif
 
 	while (SISWA_TRUE) {
-		uint32_t compressedBlockSize;
-		uint32_t unknown;
-		uint32_t uncompressedBlockSize;
 
-		compressedBlockSize = *(uint32_t*)curDataOffset;
-		curDataOffset += sizeof(uint32_t);
 
+#if 0
 		unknown = *(uint8_t*)curDataOffset;
 		curDataOffset += sizeof(uint8_t);
 
@@ -1420,8 +1462,13 @@ void siswa_arlDecompressXComp(siArlFile* arl, siByte* out, size_t capacity, siBo
 		if (uncompressedBlockSize == uncompBlockSize) {
 			SISWA_MEMCPY(out, curDataOffset, uncompressedBlockSize);
 		}
+		else {
+			siswa_decompressLZXDelta(data, compressedBlockSize, out, leftCapacity);
+
+		}
 
 		curDataOffset += compressedBlockSize;
+#endif
 	}
 
 	arl->len = fullSize;

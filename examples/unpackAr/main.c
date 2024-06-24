@@ -3,7 +3,7 @@
 
 
 int main(void) {
-	siArFile ar = siswa_arMake("res/pan.ar.00");
+	siArFile ar = siswa_arMake("examples/unpackAr/pan.ar.00");
 	siArEntry* entry;
 
 	while (siswa_arEntryPoll(&ar, &entry)) {

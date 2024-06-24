@@ -32,10 +32,10 @@ fileInfo readFile(const char* filename) {
 
 
 static const char* filenames[] = {
-	"area22_enemyset.set.xml",
-	"area03_gimmickset.set.xml",
-	"system.set.xml",
-	"BaseEvil.set.xml",
+	"examples/packAr/area22_enemyset.set.xml",
+	"examples/packAr/area03_gimmickset.set.xml",
+	"examples/packAr/system.set.xml",
+	"examples/packAr/BaseEvil.set.xml",
 };
 static fileInfo files[countof(filenames)];
 

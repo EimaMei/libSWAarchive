@@ -8,9 +8,9 @@ int main(void) {
 	siArFile arFiles[3];
 
 	/* Open the archive files. */
-	arFiles[0] = siswa_arMake("test.ar.00");
-	arFiles[1] = siswa_arMake("gimmickSet.ar.00");
-	arFiles[2] = siswa_arMake("anotherGimmickSet.ar.00");
+	arFiles[0] = siswa_arMake("examples/mergeAr/test.ar.00");
+	arFiles[1] = siswa_arMake("examples/mergeAr/gimmickSet.ar.00");
+	arFiles[2] = siswa_arMake("examples/mergeAr/anotherGimmickSet.ar.00");
 
 	/* Merge them all into one big one. anotherGimmickSet.ar.00's "area03_gimmickset.set.xml"
 	 * entry gets ignored because that entry was already set by gimmickSet.ar.00. */
